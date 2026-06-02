@@ -1,0 +1,55 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Story {
+  id                    String        @id @default(cuid())
+  slug                  String        @unique
+  headline_standard     String
+  headline_catchy       String
+  headline_chosen       String?       // admin picks or edits final headline
+  editorial_tone        String        @default("Catchy tabloid-style, fact-bound, legally cautious.")
+  geography_focus       String        @default("Fort Lauderdale / Broward County, Florida")
+  source_confidence_score Float       @default(0.0) // 0.0 – 1.0
+  body                  String        @db.Text
+  status                StoryStatus   @default(DRAFT)
+  source_name           String        // e.g. "Broward County Sheriff's Office"
+  source_url            String?
+  incident_date         DateTime?
+  arrest_date           DateTime?
+  subject_name          String?       // full name from arrest record
+  charges               String[]      // list of charge strings
+  booking_number        String?
+  municipality          String?       // Fort Lauderdale, Pompano Beach, etc.
+  created_at            DateTime      @default(now())
+  updated_at            DateTime      @updatedAt
+  published_at          DateTime?
+  reviewed_by           String?       // admin user id
+  reviewed_at           DateTime?
+  admin_notes           String?       @db.Text
+
+  @@index([status])
+  @@index([created_at])
+  @@index([municipality])
+}
+
+model AdminUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  password     String   // bcrypt hash
+  name         String
+  created_at   DateTime @default(now())
+}
+
+enum StoryStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  PUBLISHED
+  REJECTED
+}
