@@ -1,0 +1,77 @@
+{
+  "_meta": {
+    "source": "BSO Jail Booking Register — Mock Fixture",
+    "description": "Realistic sample data matching the BSO booking register format. Used for local testing only.",
+    "generated": "2024-06-02"
+  },
+  "bookings": [
+    {
+      "name": "JOHNSON, MARCUS DWAYNE",
+      "booking_date": "2024-06-02",
+      "booking_number": "24-0060201",
+      "arresting_agency": "Broward County Sheriff's Office",
+      "city": "Fort Lauderdale",
+      "county": "Broward",
+      "charges": [
+        "Possession of cocaine (F3)",
+        "Possession of drug paraphernalia (M1)"
+      ],
+      "bond": "$5,000",
+      "release_status": "Held"
+    },
+    {
+      "name": "PATEL, RAVI KUMAR",
+      "booking_date": "2024-06-02",
+      "booking_number": "24-0060202",
+      "arresting_agency": "Fort Lauderdale Police Department",
+      "city": "Fort Lauderdale",
+      "county": "Broward",
+      "charges": [
+        "DUI — alcohol or drugs (M1)"
+      ],
+      "bond": "$500",
+      "release_status": "Released on bond"
+    },
+    {
+      "name": "WASHINGTON, TERRELL JAMES",
+      "booking_date": "2024-06-01",
+      "booking_number": "24-0060103",
+      "arresting_agency": "Broward County Sheriff's Office",
+      "city": "Pompano Beach",
+      "county": "Broward",
+      "charges": [
+        "Burglary of a dwelling — unoccupied (F2)",
+        "Grand theft — $10,000 to under $100,000 (F2)"
+      ],
+      "bond": "$25,000",
+      "release_status": "Held"
+    },
+    {
+      "name": "RODRIGUEZ, CARLOS MIGUEL",
+      "booking_date": "2024-06-01",
+      "booking_number": "24-0060104",
+      "arresting_agency": "Deerfield Beach Police Department",
+      "city": "Deerfield Beach",
+      "county": "Broward",
+      "charges": [
+        "Battery on a law enforcement officer (F3)",
+        "Resisting officer with violence (F3)"
+      ],
+      "bond": "$15,000",
+      "release_status": "Held"
+    },
+    {
+      "name": "THOMPSON, DIANE MARIE",
+      "booking_date": "2024-06-01",
+      "booking_number": "24-0060105",
+      "arresting_agency": "Broward County Sheriff's Office",
+      "city": "Lauderhill",
+      "county": "Broward",
+      "charges": [
+        "Fraud — worthless check under $150 (M1)"
+      ],
+      "bond": "$1,500",
+      "release_status": "Released on bond"
+    }
+  ]
+}

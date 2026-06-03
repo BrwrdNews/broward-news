@@ -7,75 +7,221 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ---------------------------------------------------------------------------
+// ===========================================================================
 // Story
-// ---------------------------------------------------------------------------
+// ===========================================================================
 
 model Story {
-  id                    String             @id @default(cuid())
-  slug                  String             @unique
-  headline_standard     String
-  headline_catchy       String
-  headline_chosen       String?
-  editorial_tone        String             @default("Catchy tabloid-style, fact-bound, legally cautious.")
-  geography_focus       String             @default("Fort Lauderdale / Broward County, Florida")
-  source_confidence_score Float            @default(0.0)
-  body                  String             @db.Text
-  status                StoryStatus        @default(DRAFT)
-  source_name           String
-  source_url            String?
-  incident_date         DateTime?
-  arrest_date           DateTime?
-  subject_name          String?
-  /// "man" | "woman" | "resident" | "suspect" — used as descriptor in generated headlines
-  subject_descriptor    String             @default("resident")
-  charges               String[]
-  booking_number        String?
-  municipality          String?
-  /// Detected from charge text; controls neutral-only headline mode
-  sensitive_category    SensitiveCategory?
-  created_at            DateTime           @default(now())
-  updated_at            DateTime           @updatedAt
-  published_at          DateTime?
-  reviewed_by           String?
-  reviewed_at           DateTime?
-  admin_notes           String?            @db.Text
+  id                      String             @id @default(cuid())
+  slug                    String             @unique
+  headline_standard       String
+  headline_catchy         String
+  headline_chosen         String?
+  editorial_tone          String             @default("Catchy tabloid-style, fact-bound, legally cautious.")
+  geography_focus         String             @default("Fort Lauderdale / Broward County, Florida")
+  source_confidence_score Float              @default(0.0)
+  body                    String             @db.Text
+  status                  StoryStatus        @default(DRAFT)
+  source_name             String
+  source_url              String?
+  incident_date           DateTime?
+  arrest_date             DateTime?
+  subject_name            String?
+  subject_descriptor      String             @default("resident")
+  charges                 String[]
+  booking_number          String?
+  municipality            String?
+  sensitive_category      SensitiveCategory?
+  /// ParsedRecord.id that generated this story (if any)
+  source_record_id        String?
+  created_at              DateTime           @default(now())
+  updated_at              DateTime           @updatedAt
+  published_at            DateTime?
+  reviewed_by             String?
+  reviewed_at             DateTime?
+  admin_notes             String?            @db.Text
 
-  headlines             StoryHeadline[]
-  notifications         HeadlineNotification[]
+  headlines               StoryHeadline[]
+  notifications           HeadlineNotification[]
 
   @@index([status])
   @@index([created_at])
   @@index([municipality])
+  @@index([source_record_id])
 }
 
-// ---------------------------------------------------------------------------
-// StoryHeadline — one row per generated headline option
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// Ingestion — Source catalog
+// ===========================================================================
+
+model Source {
+  id                    String       @id @default(cuid())
+  name                  String
+  source_type           SourceType
+  base_url              String
+  description           String?
+  is_enabled            Boolean      @default(true)
+  /// How often to auto-fetch (hours). 0 = manual only.
+  fetch_interval_hours  Int          @default(24)
+  requires_manual       Boolean      @default(false)
+  last_fetched_at       DateTime?
+  last_fetch_status     FetchStatus?
+  total_records_imported Int         @default(0)
+  notes                 String?      @db.Text
+  created_at            DateTime     @default(now())
+  updated_at            DateTime     @updatedAt
+
+  fetches               SourceFetch[]
+  records               ParsedRecord[]
+
+  @@index([source_type])
+  @@index([is_enabled])
+}
+
+// ===========================================================================
+// Ingestion — Fetch log
+// ===========================================================================
+
+model SourceFetch {
+  id                  String      @id @default(cuid())
+  source_id           String
+  source              Source      @relation(fields: [source_id], references: [id], onDelete: Cascade)
+  status              FetchStatus @default(IN_PROGRESS)
+  fetch_method        FetchMethod
+  started_at          DateTime    @default(now())
+  completed_at        DateTime?
+  records_found       Int         @default(0)
+  records_imported    Int         @default(0)
+  records_skipped     Int         @default(0)
+  error_message       String?     @db.Text
+  source_url_fetched  String?
+
+  records             ParsedRecord[]
+  errors              IngestionError[]
+
+  @@index([source_id])
+  @@index([status])
+  @@index([started_at])
+}
+
+// ===========================================================================
+// Ingestion — Parsed records (pre-story staging area)
+// ===========================================================================
+
+model ParsedRecord {
+  id                        String       @id @default(cuid())
+  source_id                 String
+  source                    Source       @relation(fields: [source_id], references: [id], onDelete: Cascade)
+  source_fetch_id           String
+  source_fetch              SourceFetch  @relation(fields: [source_fetch_id], references: [id], onDelete: Cascade)
+
+  source_url                String?
+  source_type               SourceType
+  retrieved_at              DateTime
+  raw_text                  String?      @db.Text
+  parser_name               String
+  parser_confidence_score   Float        @default(0.0)
+
+  // Structured arrest fields
+  person_name               String?
+  booking_date              DateTime?
+  booking_number            String?
+  arresting_agency          String?
+  city                      String?
+  county                    String?      @default("Broward")
+  jurisdiction              String?
+  charges                   String[]
+  bond                      String?
+  release_status            String?
+  court_case_number         String?
+  court_case_url            String?
+
+  // Workflow
+  record_status             RecordStatus @default(NEW)
+  /// true when charges or context indicate a minor is involved
+  is_suppressed             Boolean      @default(false)
+  suppression_reason        String?
+  admin_notes               String?      @db.Text
+  /// Story.id — set after draft is generated
+  story_id                  String?
+  reviewed_by               String?
+  reviewed_at               DateTime?
+  created_at                DateTime     @default(now())
+  updated_at                DateTime     @updatedAt
+
+  dedupe_flags   DedupeCandidate[] @relation("RecordDedupe")
+  dedupe_matches DedupeCandidate[] @relation("DuplicateDedupe")
+
+  @@index([source_id])
+  @@index([source_fetch_id])
+  @@index([record_status])
+  @@index([booking_date])
+  @@index([person_name])
+  @@index([booking_number])
+  @@index([is_suppressed])
+}
+
+// ===========================================================================
+// Ingestion — Error log
+// ===========================================================================
+
+model IngestionError {
+  id              String      @id @default(cuid())
+  source_fetch_id String
+  source_fetch    SourceFetch @relation(fields: [source_fetch_id], references: [id], onDelete: Cascade)
+  /// FETCH_FAILED | PARSE_ERROR | VALIDATION_ERROR | CAPTCHA_REQUIRED | DUPLICATE
+  error_type      String
+  message         String      @db.Text
+  raw_input       String?     @db.Text
+  created_at      DateTime    @default(now())
+
+  @@index([source_fetch_id])
+  @@index([error_type])
+}
+
+// ===========================================================================
+// Ingestion — Duplicate detection
+// ===========================================================================
+
+model DedupeCandidate {
+  id                   String        @id @default(cuid())
+  record_id            String
+  record               ParsedRecord  @relation("RecordDedupe",    fields: [record_id],           references: [id], onDelete: Cascade)
+  duplicate_record_id  String
+  duplicate_record     ParsedRecord  @relation("DuplicateDedupe", fields: [duplicate_record_id], references: [id], onDelete: Cascade)
+  similarity_score     Float         // 0.0 – 1.0
+  match_fields         String[]      // ["person_name", "booking_date", ...]
+  resolution           DupeResolution @default(PENDING)
+  resolved_by          String?
+  resolved_at          DateTime?
+  created_at           DateTime      @default(now())
+
+  @@index([record_id])
+  @@index([resolution])
+}
+
+// ===========================================================================
+// Headlines
+// ===========================================================================
 
 model StoryHeadline {
   id                    String          @id @default(cuid())
   story_id              String
   story                 Story           @relation(fields: [story_id], references: [id], onDelete: Cascade)
-
   headline_text         String
   headline_type         HeadlineType
-  factual_safety_score  Int             /// 1–10
-  catchiness_score      Int             /// 1–10
+  factual_safety_score  Int
+  catchiness_score      Int
   risk_level            RiskLevel
   reason_for_score      String          @db.Text
   source_fields_used    String[]
-
-  /// Approval workflow status — independent of story publish status
   approval_status       HeadlineStatus  @default(PENDING)
-  approved_by           String?         /// admin user id
+  approved_by           String?
   approved_at           DateTime?
   rejection_reason      String?
-
   is_selected           Boolean         @default(false)
   is_blocked            Boolean         @default(false)
   generation_batch      Int             @default(1)
-
   created_at            DateTime        @default(now())
 
   @@index([story_id])
@@ -84,28 +230,28 @@ model StoryHeadline {
   @@index([story_id, generation_batch])
 }
 
-// ---------------------------------------------------------------------------
-// HeadlineNotification — tracks in-app and email alerts per story batch
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// Notifications
+// ===========================================================================
 
 model HeadlineNotification {
-  id           String               @id @default(cuid())
+  id           String           @id @default(cuid())
   story_id     String
-  story        Story                @relation(fields: [story_id], references: [id], onDelete: Cascade)
+  story        Story            @relation(fields: [story_id], references: [id], onDelete: Cascade)
   batch        Int
-  type         NotificationType     @default(BATCH_READY)
-  sent_at      DateTime             @default(now())
+  type         NotificationType @default(BATCH_READY)
+  sent_at      DateTime         @default(now())
   dismissed_at DateTime?
-  email_sent   Boolean              @default(false)
+  email_sent   Boolean          @default(false)
   email_error  String?
 
   @@index([story_id])
   @@index([dismissed_at])
 }
 
-// ---------------------------------------------------------------------------
+// ===========================================================================
 // Admin users
-// ---------------------------------------------------------------------------
+// ===========================================================================
 
 model AdminUser {
   id         String   @id @default(cuid())
@@ -115,9 +261,9 @@ model AdminUser {
   created_at DateTime @default(now())
 }
 
-// ---------------------------------------------------------------------------
+// ===========================================================================
 // Enums
-// ---------------------------------------------------------------------------
+// ===========================================================================
 
 enum StoryStatus {
   DRAFT
@@ -142,20 +288,17 @@ enum RiskLevel {
   HIGH
 }
 
-/// Per-headline approval mini-workflow
 enum HeadlineStatus {
-  PENDING    /// generated, not yet reviewed
-  APPROVED   /// admin approved — eligible for selection
-  REJECTED   /// admin rejected — not selectable
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum NotificationType {
-  BATCH_READY    /// new batch generated, needs admin review
-  NEEDS_HEADLINE /// story approaching publish but no headline selected
+  BATCH_READY
+  NEEDS_HEADLINE
 }
 
-/// When set, only neutral headline types are generated and only LOW-risk
-/// headlines are selectable without additional confirmation.
 enum SensitiveCategory {
   SEX_CRIME
   DOMESTIC_VIOLENCE
@@ -165,4 +308,44 @@ enum SensitiveCategory {
   HUMAN_TRAFFICKING
   HATE_CRIME
   MENTAL_HEALTH
+}
+
+// -- Ingestion enums --
+
+enum SourceType {
+  BSO_BOOKING_REGISTER
+  BSO_BOOKING_BLOTTER
+  FLPD_NEWS_RELEASES
+  BROWARD_CLERK_MANUAL
+  MANUAL_ADMIN_SUBMISSION
+}
+
+enum FetchStatus {
+  PENDING
+  IN_PROGRESS
+  SUCCESS
+  PARTIAL
+  FAILED
+  SKIPPED
+}
+
+enum FetchMethod {
+  LIVE
+  MANUAL
+  MOCK
+}
+
+enum RecordStatus {
+  NEW
+  NEEDS_REVIEW
+  DUPLICATE
+  APPROVED_FOR_DRAFT
+  REJECTED
+  STORY_GENERATED
+}
+
+enum DupeResolution {
+  PENDING
+  CONFIRMED_DUPLICATE
+  NOT_DUPLICATE
 }

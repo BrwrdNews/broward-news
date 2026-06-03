@@ -1,0 +1,62 @@
+{
+  "_meta": {
+    "source": "Fort Lauderdale Police Department News Releases — Mock Fixture",
+    "description": "Sample news release data matching FLPD press release format. Used for local testing only.",
+    "generated": "2024-06-02"
+  },
+  "releases": [
+    {
+      "title": "ARREST — Narcotics",
+      "release_date": "2024-06-02",
+      "release_url": "https://www.fortlauderdale.gov/departments/police/news-media/2024/arrest-narcotics-0602",
+      "summary": "Fort Lauderdale Police Department detectives arrested a Fort Lauderdale man on narcotics charges following a traffic stop in the 1600 block of Broward Boulevard. The suspect was found in possession of cocaine and cash consistent with narcotics sales.",
+      "person_name": "BELL, ANTHONY DARNELL",
+      "booking_date": "2024-06-02",
+      "booking_number": "24-0060215",
+      "arresting_agency": "Fort Lauderdale Police Department",
+      "city": "Fort Lauderdale",
+      "county": "Broward",
+      "charges": [
+        "Possession of cocaine with intent to sell (F2)",
+        "Possession of cocaine (F3)"
+      ],
+      "bond": "$15,000",
+      "release_status": "Held"
+    },
+    {
+      "title": "ARREST — Theft/Burglary",
+      "release_date": "2024-06-01",
+      "release_url": "https://www.fortlauderdale.gov/departments/police/news-media/2024/arrest-theft-0601",
+      "summary": "A Fort Lauderdale woman was arrested after FLPD officers responded to a retail theft call at a business on Andrews Avenue. The suspect was identified via surveillance footage.",
+      "person_name": "JACKSON, TAMARA RENEE",
+      "booking_date": "2024-06-01",
+      "booking_number": "24-0060116",
+      "arresting_agency": "Fort Lauderdale Police Department",
+      "city": "Fort Lauderdale",
+      "county": "Broward",
+      "charges": [
+        "Retail theft — $300 to under $5,000 (F3)"
+      ],
+      "bond": "$2,500",
+      "release_status": "Released on bond"
+    },
+    {
+      "title": "ARREST — Weapons",
+      "release_date": "2024-06-01",
+      "release_url": "https://www.fortlauderdale.gov/departments/police/news-media/2024/arrest-weapons-0601",
+      "summary": "FLPD officers arrested a Pompano Beach man during a traffic stop in Fort Lauderdale after detecting a concealed firearm. The subject was found to have a prior felony conviction.",
+      "person_name": "CARTER, JEROME WILLIAM",
+      "booking_date": "2024-06-01",
+      "booking_number": "24-0060117",
+      "arresting_agency": "Fort Lauderdale Police Department",
+      "city": "Fort Lauderdale",
+      "county": "Broward",
+      "charges": [
+        "Felon in possession of a firearm (F2)",
+        "Carrying a concealed firearm without a license (F3)"
+      ],
+      "bond": "$50,000",
+      "release_status": "Held"
+    }
+  ]
+}

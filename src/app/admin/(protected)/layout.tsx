@@ -37,6 +37,9 @@ export default async function ProtectedAdminLayout({
               + New Story
             </Link>
             <AdminNavBadge />
+            <Link href="/admin/sources"       className="text-sm hover:text-brand-red transition-colors">Sources</Link>
+            <Link href="/admin/records"       className="text-sm hover:text-brand-red transition-colors">Records</Link>
+            <Link href="/admin/manual-source" className="text-sm hover:text-brand-red transition-colors">Import</Link>
           </div>
           <div className="flex items-center gap-4 text-sm">
             <span className="text-gray-400">{session.user?.email}</span>

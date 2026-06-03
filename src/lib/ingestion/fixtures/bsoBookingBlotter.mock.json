@@ -1,0 +1,52 @@
+{
+  "_meta": {
+    "source": "BSO Daily Booking Blotter — Mock Fixture",
+    "description": "Sample data matching the BSO blotter format (typically a PDF). Used for local testing only.",
+    "generated": "2024-06-02"
+  },
+  "report_date": "2024-06-02",
+  "agency": "Broward County Sheriff's Office",
+  "entries": [
+    {
+      "name": "HERNANDEZ, JOSE ANTONIO",
+      "booking_date": "2024-06-02",
+      "booking_number": "24-0060210",
+      "arresting_agency": "Broward County Sheriff's Office",
+      "city": "Miramar",
+      "county": "Broward",
+      "charges": [
+        "Possession of cannabis over 20g (F3)",
+        "Possession with intent to sell cannabis (F3)"
+      ],
+      "bond": "$10,000",
+      "release_status": "Held"
+    },
+    {
+      "name": "WILLIAMS, DESHAWN LAMAR",
+      "booking_date": "2024-06-02",
+      "booking_number": "24-0060211",
+      "arresting_agency": "Hallandale Beach Police Department",
+      "city": "Hallandale Beach",
+      "county": "Broward",
+      "charges": [
+        "Robbery by sudden snatching (F3)"
+      ],
+      "bond": "$20,000",
+      "release_status": "Held"
+    },
+    {
+      "name": "NGUYEN, TUAN MINH",
+      "booking_date": "2024-06-01",
+      "booking_number": "24-0060112",
+      "arresting_agency": "Pembroke Pines Police Department",
+      "city": "Pembroke Pines",
+      "county": "Broward",
+      "charges": [
+        "Aggravated battery (F2)",
+        "Criminal mischief — damage over $1,000 (F3)"
+      ],
+      "bond": "$30,000",
+      "release_status": "Held"
+    }
+  ]
+}
