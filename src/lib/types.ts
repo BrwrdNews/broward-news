@@ -6,16 +6,22 @@ export type StoryStatus =
   | "REJECTED";
 
 export type HeadlineType =
-  | "STANDARD"
-  | "CATCHY"
-  | "ALLITERATIVE"
-  | "RHYME"
-  | "IDIOM"
-  | "SHORT_MOBILE";
+  | "DAILY_MAIL_HOOK"
+  | "DRAMATIC_LOCAL"
+  | "CHARGE_FOCUSED"
+  | "RECORDS_REVEAL"
+  | "POLICE_SAY"
+  | "SHORT_MOBILE"
+  | "SAFER_FALLBACK";
 
 export type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
 
 export type HeadlineStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export type EditorialTone =
+  | "NEUTRAL"
+  | "CATCHY"
+  | "SENSATIONAL_CAUTIOUS";
 
 export type SensitiveCategory =
   | "SEX_CRIME"
@@ -32,6 +38,7 @@ export interface StoryFormData {
   headline_catchy: string;
   headline_chosen?: string;
   editorial_tone: string;
+  editorial_tone_setting?: EditorialTone;
   geography_focus: string;
   source_confidence_score: number;
   body: string;
@@ -51,9 +58,12 @@ export interface HeadlineOption {
   id: string;
   story_id: string;
   headline_text: string;
+  deck: string | null;
   headline_type: HeadlineType;
   factual_safety_score: number;
   catchiness_score: number;
+  uniqueness_score: number;
+  sensationalism_score: number;
   risk_level: RiskLevel;
   reason_for_score: string;
   source_fields_used: string[];

@@ -1,6 +1,9 @@
 /**
  * GET  /api/admin/stories/[id]/headlines  — list all headline options for a story
- * POST /api/admin/stories/[id]/headlines  — generate a new batch (6 options or safeOnly=1)
+ * POST /api/admin/stories/[id]/headlines  — generate a new batch
+ *
+ * POST body: { safeOnly?: boolean }
+ * The editorial_tone_setting stored on the Story drives which types are generated.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -9,6 +12,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { generateHeadlines, detectSensitiveCategory } from "@/lib/headline-generator";
 import { notifyBatchReady } from "@/lib/notify";
+import type { EditorialTone } from "@/lib/types";
 
 // ── GET ──────────────────────────────────────────────────────────────────────
 
@@ -42,14 +46,14 @@ export async function POST(
   const body = await req.json().catch(() => ({}));
   const safeOnly: boolean = body.safeOnly === true;
 
-  // Compute next batch number
+  // Next batch number
   const lastBatch = await prisma.storyHeadline.aggregate({
     where: { story_id: params.id },
     _max: { generation_batch: true },
   });
   const nextBatch = (lastBatch._max.generation_batch ?? 0) + 1;
 
-  // Detect sensitive category and persist it on the story if newly found
+  // Detect and persist sensitive category
   const detectedCategory = detectSensitiveCategory(story.charges);
   if (detectedCategory && story.sensitive_category !== detectedCategory) {
     await prisma.story.update({
@@ -59,46 +63,60 @@ export async function POST(
   }
 
   const storyData = {
-    municipality: story.municipality,
-    charges: story.charges,
-    subject_name: story.subject_name,
+    municipality:      story.municipality,
+    charges:           story.charges,
+    subject_name:      story.subject_name,
     subject_descriptor: story.subject_descriptor,
-    source_name: story.source_name,
-    arrest_date: story.arrest_date,
-    booking_number: story.booking_number,
-    geography_focus: story.geography_focus,
+    source_name:       story.source_name,
+    arrest_date:       story.arrest_date,
+    booking_number:    story.booking_number,
+    geography_focus:   story.geography_focus,
+    // bond and release_status not on Story model — enriched from ParsedRecord when available
   };
 
-  const generated = generateHeadlines(storyData, nextBatch, safeOnly);
+  const tone = (story.editorial_tone_setting ?? "SENSATIONAL_CAUTIOUS") as EditorialTone;
+  const generated = generateHeadlines(storyData, nextBatch, safeOnly, tone);
+
+  // Uniqueness pass: check if any headline_text already exists on a *different* story
+  const existingTexts = await prisma.storyHeadline.findMany({
+    where: {
+      headline_text: { in: generated.map((h) => h.headline_text) },
+      story_id:      { not: params.id },
+    },
+    select: { headline_text: true },
+  });
+  const duplicateTexts = new Set(existingTexts.map((e) => e.headline_text));
 
   const created = await prisma.storyHeadline.createMany({
     data: generated.map((h) => ({
-      story_id: params.id,
-      headline_text: h.headline_text,
-      headline_type: h.headline_type,
+      story_id:             params.id,
+      headline_text:        h.headline_text,
+      deck:                 h.deck,
+      headline_type:        h.headline_type,
       factual_safety_score: h.factual_safety_score,
-      catchiness_score: h.catchiness_score,
-      risk_level: h.risk_level,
-      reason_for_score: h.reason_for_score,
-      source_fields_used: h.source_fields_used,
-      generation_batch: nextBatch,
-      // approval_status defaults to PENDING via schema default
+      catchiness_score:     h.catchiness_score,
+      uniqueness_score:     duplicateTexts.has(h.headline_text)
+                              ? Math.max(1, h.uniqueness_score - 4)  // penalise exact duplicate
+                              : h.uniqueness_score,
+      sensationalism_score: h.sensationalism_score,
+      risk_level:           h.risk_level,
+      reason_for_score:     h.reason_for_score,
+      source_fields_used:   h.source_fields_used,
+      generation_batch:     nextBatch,
     })),
   });
 
-  // Fetch new headlines to return + fire notification (non-blocking)
   const newHeadlines = await prisma.storyHeadline.findMany({
-    where: { story_id: params.id, generation_batch: nextBatch },
+    where:   { story_id: params.id, generation_batch: nextBatch },
     orderBy: { headline_type: "asc" },
   });
 
-  // Fire-and-forget notification
   notifyBatchReady({
-    storyId: params.id,
-    storySlug: story.slug,
+    storyId:       params.id,
+    storySlug:     story.slug,
     storyHeadline: story.headline_standard,
-    municipality: story.municipality,
-    batchNumber: nextBatch,
+    municipality:  story.municipality,
+    batchNumber:   nextBatch,
     headlineCount: created.count,
   }).catch((err) => console.warn("[notify] non-fatal:", err));
 

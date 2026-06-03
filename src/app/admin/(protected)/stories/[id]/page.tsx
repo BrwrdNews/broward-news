@@ -31,6 +31,7 @@ export default async function EditStoryPage({
       : "",
     subject_name: story.subject_name ?? "",
     subject_descriptor: story.subject_descriptor ?? "resident",
+    editorial_tone_setting: (story.editorial_tone_setting ?? "SENSATIONAL_CAUTIOUS") as import("@/lib/types").EditorialTone,
     charges: story.charges,
     booking_number: story.booking_number ?? "",
     municipality: story.municipality ?? "",

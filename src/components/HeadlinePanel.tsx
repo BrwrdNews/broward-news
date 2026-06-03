@@ -9,12 +9,13 @@ import HeadlinePreviewModal from "@/components/HeadlinePreviewModal";
 // ---------------------------------------------------------------------------
 
 const TYPE_LABELS: Record<string, string> = {
-  STANDARD:     "Standard Factual",
-  CATCHY:       "Catchy",
-  ALLITERATIVE: "Alliterative",
-  RHYME:        "Rhyme / Near-rhyme",
-  IDIOM:        "Idiom / Play-on-words",
-  SHORT_MOBILE: "Short Mobile",
+  DAILY_MAIL_HOOK: "Long Dramatic Hook",
+  DRAMATIC_LOCAL:  "Dramatic Local Hook",
+  CHARGE_FOCUSED:  "Charge-Focused Hook",
+  RECORDS_REVEAL:  "Records Reveal",
+  POLICE_SAY:      "Police Say",
+  SHORT_MOBILE:    "Short Mobile",
+  SAFER_FALLBACK:  "Safer Fallback",
 };
 
 const RISK_STYLES: Record<RiskLevel, string> = {
@@ -360,10 +361,12 @@ export default function HeadlinePanel({
                     <th className="px-2 py-2 border border-gray-200 w-6">
                       <span className="sr-only">Preview select</span>
                     </th>
-                    <th className="text-left px-3 py-2 border border-gray-200 w-[32%]">Headline</th>
+                    <th className="text-left px-3 py-2 border border-gray-200 w-[30%]">Headline + Deck</th>
                     <th className="text-left px-3 py-2 border border-gray-200">Type</th>
                     <th className="text-center px-3 py-2 border border-gray-200">Safety</th>
                     <th className="text-center px-3 py-2 border border-gray-200">Catchy</th>
+                    <th className="text-center px-3 py-2 border border-gray-200">Unique</th>
+                    <th className="text-center px-3 py-2 border border-gray-200">Drama</th>
                     <th className="text-center px-3 py-2 border border-gray-200">Risk</th>
                     <th className="text-center px-3 py-2 border border-gray-200">Approval</th>
                     <th className="text-left px-3 py-2 border border-gray-200">Notes</th>
@@ -392,9 +395,12 @@ export default function HeadlinePanel({
                           />
                         </td>
 
-                        {/* Headline text */}
+                        {/* Headline text + deck */}
                         <td className="px-3 py-2 border border-gray-200 align-top">
                           <p className="font-medium text-gray-800 leading-snug">{h.headline_text}</p>
+                          {h.deck && (
+                            <p className="text-xs text-gray-500 italic mt-1 leading-snug border-l-2 border-gray-200 pl-2">{h.deck}</p>
+                          )}
                           <p className="text-xs text-gray-400 mt-0.5">{h.headline_text.length} chars</p>
                           {isSelected && (
                             <span className="inline-block mt-1 text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded">✓ Selected</span>
@@ -452,6 +458,22 @@ export default function HeadlinePanel({
                         {/* Catchiness score */}
                         <td className="px-3 py-2 border border-gray-200 text-center align-top">
                           <ScorePill score={h.catchiness_score} color="blue" />
+                        </td>
+
+                        {/* Uniqueness score */}
+                        <td className="px-3 py-2 border border-gray-200 text-center align-top">
+                          <ScorePill score={h.uniqueness_score} color="blue" />
+                        </td>
+
+                        {/* Sensationalism score */}
+                        <td className="px-3 py-2 border border-gray-200 text-center align-top">
+                          <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-bold ${
+                            h.sensationalism_score >= 7 ? "bg-orange-100 text-orange-800"
+                            : h.sensationalism_score >= 5 ? "bg-yellow-100 text-yellow-800"
+                            : "bg-gray-100 text-gray-600"
+                          }`}>
+                            {h.sensationalism_score}/10
+                          </span>
                         </td>
 
                         {/* Risk level */}

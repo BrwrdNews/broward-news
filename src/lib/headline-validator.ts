@@ -63,7 +63,7 @@ const MINOR_INDICATORS: RegExp[] = [
 ];
 
 // Headline types considered "neutral" — safe for sensitive stories
-const NEUTRAL_TYPES: HeadlineType[] = ["STANDARD", "SHORT_MOBILE"];
+const NEUTRAL_TYPES: HeadlineType[] = ["SAFER_FALLBACK", "SHORT_MOBILE"];
 
 // ---------------------------------------------------------------------------
 // Validation interface consumed by UI / API
@@ -166,7 +166,7 @@ export function validateHeadline(
   if (sensitiveCategory !== null && !NEUTRAL_TYPES.includes(type)) {
     errors.push(
       `This story involves a sensitive category (${sensitiveCategory.replace(/_/g, " ")}). ` +
-        `Only STANDARD or SHORT_MOBILE neutral headline types may be published. ` +
+        `Only SAFER_FALLBACK or SHORT_MOBILE neutral headline types may be published. ` +
         `Use "Generate safer rewrite" to get an approved alternative.`
     );
   }

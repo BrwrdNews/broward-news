@@ -1,18 +1,27 @@
 /**
- * Catchy tabloid-inspired headline generator.
+ * Tabloid-style headline generator — "Sensational but cautious" mode.
  *
- * Generates factually-grounded, legally cautious headline options from
- * structured arrest-record data. All claims in every generated headline
- * must trace directly back to a source field on the story.
+ * Every headline follows the formula:
+ *   [Local person descriptor] + [booking/arrest/charge event]
+ *   + [specific source-supported detail] + [legal qualifier]
  *
- * Headline types: STANDARD · CATCHY · ALLITERATIVE · RHYME · IDIOM · SHORT_MOBILE
+ * Example output:
+ *   "Fort Lauderdale man is booked on drug possession charge after
+ *    Broward records list additional listed count"
+ *
+ * Seven types:
+ *   DAILY_MAIL_HOOK  · DRAMATIC_LOCAL · CHARGE_FOCUSED
+ *   RECORDS_REVEAL   · POLICE_SAY     · SHORT_MOBILE   · SAFER_FALLBACK
+ *
+ * All claims trace directly to a source field. No invented facts.
+ * No guilt-implying language. Presumption of innocence is preserved.
  */
 
-import type { HeadlineType, RiskLevel, SensitiveCategory } from "./types";
+import type { HeadlineType, RiskLevel, SensitiveCategory, EditorialTone } from "./types";
 
-// ---------------------------------------------------------------------------
+// ===========================================================================
 // Public interfaces
-// ---------------------------------------------------------------------------
+// ===========================================================================
 
 export interface HeadlineStoryData {
   municipality?: string | null;
@@ -23,21 +32,28 @@ export interface HeadlineStoryData {
   arrest_date?: Date | null;
   booking_number?: string | null;
   geography_focus: string;
+  // Optional enrichment fields from ParsedRecord
+  bond?: string | null;
+  release_status?: string | null;
+  arresting_agency?: string | null;
 }
 
 export interface GeneratedHeadline {
   headline_text: string;
+  deck: string;
   headline_type: HeadlineType;
-  factual_safety_score: number;
-  catchiness_score: number;
+  factual_safety_score: number;   // 1–10
+  catchiness_score: number;       // 1–10
+  uniqueness_score: number;       // 1–10 (story-specificity)
+  sensationalism_score: number;   // 1–10 (drama level)
   risk_level: RiskLevel;
   reason_for_score: string;
   source_fields_used: string[];
 }
 
-// ---------------------------------------------------------------------------
+// ===========================================================================
 // Sensitive-category detection
-// ---------------------------------------------------------------------------
+// ===========================================================================
 
 const SENSITIVE_PATTERNS: Array<[SensitiveCategory, RegExp]> = [
   ["SEX_CRIME",         /sexual|rape|lewd|lascivious|indecent exposure|solicitation|prostitut|sex offend|voyeur/i],
@@ -50,9 +66,7 @@ const SENSITIVE_PATTERNS: Array<[SensitiveCategory, RegExp]> = [
   ["MENTAL_HEALTH",     /baker act|involuntary commitment|mental health crisis/i],
 ];
 
-export function detectSensitiveCategory(
-  charges: string[]
-): SensitiveCategory | null {
+export function detectSensitiveCategory(charges: string[]): SensitiveCategory | null {
   const text = charges.join(" ");
   for (const [cat, re] of SENSITIVE_PATTERNS) {
     if (re.test(text)) return cat;
@@ -60,30 +74,23 @@ export function detectSensitiveCategory(
   return null;
 }
 
-// ---------------------------------------------------------------------------
+// ===========================================================================
 // Charge simplification
-// ---------------------------------------------------------------------------
+// ===========================================================================
 
 export function simplifyCharge(charge: string): string {
   const c = charge.toLowerCase();
-
-  // Drug
   if (/cocaine|heroin|fentanyl|methamphetamine|\bmeth\b|marijuana|cannabis|mdma|ecstasy|oxycodone|hydrocodone/.test(c)) {
     if (/intent|trafficking|deliver|distribut|manufacture/.test(c)) return "drug trafficking charge";
     if (/paraphernalia/.test(c)) return "drug paraphernalia charge";
     return "drug possession charge";
   }
-  // DUI
   if (/dui|dwi|driving under the influence|driving while impaired/.test(c)) return "DUI charge";
-
-  // Weapons
   if (/firearm|weapon|gun|pistol|rifle|ammunition|explosive/.test(c)) {
     if (/conceal/.test(c)) return "concealed weapon charge";
     if (/possess.*felon|felon.*possess/.test(c)) return "felon in possession of a firearm charge";
     return "weapons charge";
   }
-
-  // Violence / injury
   if (/murder|homicide/.test(c)) return "homicide charge";
   if (/manslaughter/.test(c)) return "manslaughter charge";
   if (/aggravated battery/.test(c)) return "aggravated battery charge";
@@ -92,219 +99,307 @@ export function simplifyCharge(charge: string): string {
   if (/assault/.test(c)) return "assault charge";
   if (/kidnap/.test(c)) return "kidnapping charge";
   if (/stalk/.test(c)) return "stalking charge";
-
-  // Property
   if (/robbery/.test(c)) return "robbery charge";
   if (/burglary/.test(c)) return "burglary charge";
   if (/theft|larceny|shoplifting/.test(c)) return "theft charge";
   if (/arson/.test(c)) return "arson charge";
   if (/criminal mischief|vandalism/.test(c)) return "vandalism charge";
   if (/trespass/.test(c)) return "trespass charge";
-
-  // Financial / fraud
   if (/identity theft/.test(c)) return "identity theft charge";
   if (/fraud|forgery|counterfeit/.test(c)) return "fraud charge";
-
-  // Traffic / police
   if (/fleeing|eluding/.test(c)) return "fleeing police charge";
   if (/reckless driving/.test(c)) return "reckless driving charge";
   if (/resist/.test(c)) return "resisting arrest charge";
   if (/obstruct/.test(c)) return "obstruction charge";
   if (/disorderly/.test(c)) return "disorderly conduct charge";
-
-  // Fallback — strip leading charge numbers, truncate
   const clean = charge.replace(/^\d+[\.\)]\s*/, "").trim();
   return clean.length > 55 ? clean.slice(0, 52).trimEnd() + "…" : clean;
 }
 
-// ---------------------------------------------------------------------------
-// Headline template context
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// Context
+// ===========================================================================
 
 interface HeadlineContext {
-  muni:          string;   // "Fort Lauderdale" or "Broward County"
-  descriptor:    string;   // "man" | "woman" | "resident" | "suspect"
+  muni:          string;   // "Fort Lauderdale"
+  descriptor:    string;   // "man" | "woman" | "resident"
   chargeSimple:  string;   // "drug possession charge"
-  chargeCount:   number;   // total number of listed charges
+  chargeCount:   number;
   sourceName:    string;
-  hasName:       boolean;
-  isFortLauderdale: boolean;
+  agencyShort:   string;   // "Fort Lauderdale police" | "Broward deputies"
+  bond:          string | null;
+  releaseStatus: string | null;
   isSensitive:   boolean;
 }
 
+function shortAgency(name: string): string {
+  if (/broward.*sheriff|bso/i.test(name))        return "Broward deputies";
+  if (/fort lauderdale.*police|flpd/i.test(name)) return "Fort Lauderdale police";
+  if (/pompano.*beach.*police/i.test(name))        return "Pompano Beach police";
+  if (/deerfield.*beach.*police/i.test(name))      return "Deerfield Beach police";
+  if (/hallandale.*beach.*police/i.test(name))     return "Hallandale Beach police";
+  if (/pembroke.*pines.*police/i.test(name))       return "Pembroke Pines police";
+  if (/coral.*springs.*police/i.test(name))        return "Coral Springs police";
+  if (/miramar.*police/i.test(name))               return "Miramar police";
+  if (/sunrise.*police/i.test(name))               return "Sunrise police";
+  if (/plantation.*police/i.test(name))            return "Plantation police";
+  if (/hollywood.*police/i.test(name))             return "Hollywood police";
+  return "local police";
+}
+
 function buildContext(story: HeadlineStoryData): HeadlineContext {
-  const muni = story.municipality?.trim() || "Broward County";
-  const descriptor = (story.subject_descriptor?.trim() || "resident").toLowerCase();
-  const primaryCharge = story.charges[0] ?? "unknown charge";
-  const chargeSimple = simplifyCharge(primaryCharge);
-  const isFortLauderdale = /fort lauderdale/i.test(muni);
+  const muni        = story.municipality?.trim() || "Broward County";
+  const descriptor  = (story.subject_descriptor?.trim() || "resident").toLowerCase();
+  const primaryCharge = story.charges[0] ?? "";
+  const chargeSimple  = simplifyCharge(primaryCharge);
+  const agency = story.arresting_agency ?? story.source_name;
 
   return {
     muni,
     descriptor,
     chargeSimple,
     chargeCount: story.charges.length,
-    sourceName: story.source_name,
-    hasName: !!(story.subject_name?.trim()),
-    isFortLauderdale,
-    isSensitive: false, // overridden by caller when needed
+    sourceName:  story.source_name,
+    agencyShort: shortAgency(agency),
+    bond:          story.bond?.trim() || null,
+    releaseStatus: story.release_status?.trim() || null,
+    isSensitive: false,
   };
 }
 
-// Append "+ N more charges" note when applicable
-function chargesNote(ctx: HeadlineContext): string {
-  return ctx.chargeCount > 1
-    ? ` and ${ctx.chargeCount - 1} more charge${ctx.chargeCount - 1 > 1 ? "s" : ""}`
-    : "";
+// ===========================================================================
+// Story-specific detail — the key to unique, non-generic headlines
+// ===========================================================================
+
+/**
+ * Picks the most distinctive available detail from the record.
+ * Used in the [specific detail] slot of the headline formula.
+ * Per requirements: never say "1 more charge" — say "additional listed count".
+ */
+function extraDetail(ctx: HeadlineContext, variant: 0 | 1 | 2 | 3 = 0): string {
+  // Multiple charges → this is the most common differentiator
+  if (ctx.chargeCount === 2) {
+    const variants = [
+      "additional listed count",
+      "second listed charge",
+      "additional listed charge",
+      "second listed count",
+    ];
+    return variants[variant % variants.length];
+  }
+  if (ctx.chargeCount === 3) return "two additional listed charges";
+  if (ctx.chargeCount > 3)   return `${ctx.chargeCount - 1} additional listed charges`;
+
+  // Bond
+  if (ctx.bond) {
+    const variants = [
+      `bond set at ${ctx.bond}`,
+      `${ctx.bond} bond listed`,
+      `bond listed at ${ctx.bond}`,
+      `${ctx.bond} bond in records`,
+    ];
+    return variants[variant % variants.length];
+  }
+
+  // Release status
+  if (ctx.releaseStatus) {
+    const s = ctx.releaseStatus.toLowerCase();
+    if (s.includes("release")) return "release on bond listed in records";
+    if (s.includes("held"))    return "held status listed in records";
+    return `${ctx.releaseStatus.toLowerCase()} status shown in records`;
+  }
+
+  // Default — factual and still readable
+  const defaults = [
+    "arrest confirmed by officials",
+    "records filed by officials",
+    "arrest logged by officials",
+    "booking filed in records",
+  ];
+  return defaults[variant % defaults.length];
 }
 
-// ---------------------------------------------------------------------------
-// Template banks  (4 templates per type → cycle by batchNumber)
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// Deck builder — factual subheadline
+// ===========================================================================
 
-type TemplateFn = (ctx: HeadlineContext) => string;
+function buildDeck(ctx: HeadlineContext, story: HeadlineStoryData): string {
+  const source = ctx.sourceName;
+  const loc    = ctx.muni;
+  const desc   = ctx.descriptor;
+  const charge = ctx.chargeSimple;
+
+  let base = `${source} booking records list a ${loc} ${desc} on a ${charge}`;
+
+  if (ctx.chargeCount === 2) {
+    base += " and an additional listed charge";
+  } else if (ctx.chargeCount === 3) {
+    base += " and two additional listed charges";
+  } else if (ctx.chargeCount > 3) {
+    base += ` and ${ctx.chargeCount - 1} additional listed charges`;
+  }
+
+  if (ctx.bond) {
+    base += `, with bond set at ${ctx.bond}`;
+  } else if (ctx.releaseStatus) {
+    base += `; ${desc} is listed as ${ctx.releaseStatus.toLowerCase()} in records`;
+  }
+
+  base += ".";
+  return base;
+}
+
+// ===========================================================================
+// Template banks — 4 variants per type, cycled by batchNumber
+//
+// Formula for all non-SAFER_FALLBACK types:
+//   [Muni descriptor] + [booking/charge event] + [specific detail] + [legal qualifier]
+//
+// Allowed qualifiers (per requirements):
+//   records reveal · records show · booking records list · appears in booking records
+//   was booked on · police say · officials say · according to records
+//   jail records list · booking log shows · faces listed charge
+//   second count listed · additional charge listed
+// ===========================================================================
+
+type TemplateFn = (ctx: HeadlineContext, variant: 0|1|2|3) => string;
 
 const TEMPLATES: Record<HeadlineType, TemplateFn[]> = {
-  // ── STANDARD ──────────────────────────────────────────────────────────────
-  STANDARD: [
-    (c) => `${c.muni} ${c.descriptor} booked in Broward County on ${c.chargeSimple}, records show`,
-    (c) => `Broward County booking records list ${c.muni} arrest on ${c.chargeSimple}`,
-    (c) => `${c.muni} ${c.descriptor} arrested on ${c.chargeSimple}, according to ${c.sourceName}`,
-    (c) => `Arrest records show ${c.muni} ${c.descriptor} booked on ${c.chargeSimple} in Broward`,
+
+  // ── DAILY_MAIL_HOOK ─────────────────────────────────────────────────────────
+  // Long, dramatic, full formula. This is the flagship type.
+  DAILY_MAIL_HOOK: [
+    (c, v) => `${c.muni} ${c.descriptor} is booked on ${c.chargeSimple} after Broward records list ${extraDetail(c, v)}`,
+    (c, v) => `${c.muni} ${c.descriptor} lands in Broward booking log on ${c.chargeSimple} as records reveal ${extraDetail(c, v)}`,
+    (c, v) => `${c.muni} ${c.descriptor} appears in Broward jail records on ${c.chargeSimple} — ${extraDetail(c, v)} confirmed`,
+    (c, v) => `${c.muni} ${c.descriptor}'s Broward booking shows ${c.chargeSimple} as officials confirm ${extraDetail(c, v)}`,
   ],
 
-  // ── CATCHY ────────────────────────────────────────────────────────────────
-  CATCHY: [
-    (c) => `New in the Broward booking log: ${c.muni} ${c.descriptor} listed on ${c.chargeSimple}`,
-    (c) => `Behind the booking: ${c.muni} ${c.descriptor} faces ${c.chargeSimple} per records`,
-    (c) => `Just filed: ${c.muni} ${c.descriptor}'s Broward booking shows ${c.chargeSimple}`,
-    (c) => `Broward records reveal ${c.muni} arrest — listed charge: ${c.chargeSimple}`,
+  // ── DRAMATIC_LOCAL ──────────────────────────────────────────────────────────
+  // Punchy, place-forward. The location is the emotional anchor.
+  DRAMATIC_LOCAL: [
+    (c, v) => `Broward booking records show ${c.muni} ${c.descriptor} facing ${c.chargeSimple} — ${extraDetail(c, v)}`,
+    (c, v) => `${c.muni} ${c.descriptor} turns up in Broward jail records on ${c.chargeSimple}, ${c.agencyShort} say`,
+    (c, v) => `${c.muni} ${c.descriptor} named in Broward booking records on ${c.chargeSimple} following ${c.agencyShort} arrest`,
+    (c, v) => `From ${c.muni} to Broward booking: ${c.descriptor} listed on ${c.chargeSimple} as records confirm ${extraDetail(c, v)}`,
   ],
 
-  // ── ALLITERATIVE ──────────────────────────────────────────────────────────
-  ALLITERATIVE: [
-    (c) => c.isFortLauderdale
-      ? `Fort Lauderdale felony filing: Broward booking lists ${c.chargeSimple}`
-      : `Broward booking: ${c.muni} ${c.descriptor} faces ${c.chargeSimple} filing`,
-    (c) => `Booking by the books: Broward records log ${c.muni} ${c.descriptor} on ${c.chargeSimple}`,
-    (c) => c.isFortLauderdale
-      ? `Lauderdale listing: local ${c.descriptor} logged on ${c.chargeSimple}`
-      : `${c.muni} meet booking: Broward records reveal ${c.chargeSimple} charge`,
-    (c) => `Booked, badged, and on the books: ${c.muni} arrest lists ${c.chargeSimple}`,
+  // ── CHARGE_FOCUSED ──────────────────────────────────────────────────────────
+  // The charge itself drives the hook.
+  CHARGE_FOCUSED: [
+    (c, v) => `${c.muni} ${c.descriptor} added to Broward booking records on ${c.chargeSimple} — ${extraDetail(c, v)}`,
+    (c, v) => `Broward records list ${c.muni} ${c.descriptor} on ${c.chargeSimple} with ${extraDetail(c, v)} in official filing`,
+    (c, v) => `${c.chargeSimple} charge listed against ${c.muni} ${c.descriptor} in Broward booking records`,
+    (c, v) => `${c.muni} ${c.descriptor} named in Broward ${c.chargeSimple} filing — officials note ${extraDetail(c, v)}`,
   ],
 
-  // ── RHYME ─────────────────────────────────────────────────────────────────
-  RHYME: [
-    (c) => `From the street to the booking sheet: ${c.muni} arrest lists ${c.chargeSimple}`,
-    (c) => `Broward bound: ${c.muni} ${c.descriptor} faces ${c.chargeSimple} after booking found`,
-    (c) => `On the beat, then off the street: ${c.muni} booking lists ${c.chargeSimple}`,
-    (c) => `Booked in Broward: ${c.chargeSimple} listed after ${c.muni} arrest, case found in records`,
+  // ── RECORDS_REVEAL ──────────────────────────────────────────────────────────
+  // The records themselves are the narrator; strong curiosity hook.
+  RECORDS_REVEAL: [
+    (c, v) => `Broward records reveal ${c.muni} ${c.descriptor} was booked on ${c.chargeSimple} and ${extraDetail(c, v)}`,
+    (c, _) => `Records show ${c.muni} ${c.descriptor} was booked in Broward County on ${c.chargeSimple}`,
+    (c, _) => `Broward County booking records reveal ${c.muni} ${c.descriptor} listed on ${c.chargeSimple}`,
+    (c, v) => `Jail records reveal ${c.muni} ${c.descriptor} booked on ${c.chargeSimple} after ${c.agencyShort} arrest — ${extraDetail(c, v)}`,
   ],
 
-  // ── IDIOM ─────────────────────────────────────────────────────────────────
-  IDIOM: [
-    (c) => c.isFortLauderdale
-      ? `Booked by the beach: Fort Lauderdale arrest record lists ${c.chargeSimple}`
-      : `Booked and on record: ${c.muni} arrest lists ${c.chargeSimple}`,
-    (c) => `Open book: Broward booking records show ${c.muni} arrest on ${c.chargeSimple}`,
-    (c) => `Added to the roster: ${c.muni} ${c.descriptor} booked on ${c.chargeSimple}`,
-    (c) => `End of the line: Broward records show ${c.muni} ${c.descriptor} arrested on ${c.chargeSimple}`,
+  // ── POLICE_SAY ──────────────────────────────────────────────────────────────
+  // Authority attribution is up front — strongest legal cover.
+  POLICE_SAY: [
+    (c, _) => `Police say ${c.muni} ${c.descriptor} was booked on ${c.chargeSimple} in latest Broward arrest`,
+    (c, v) => `${c.agencyShort} say ${c.muni} ${c.descriptor} was arrested on ${c.chargeSimple} — ${extraDetail(c, v)}, records confirm`,
+    (c, _) => `Officials say ${c.muni} ${c.descriptor} was booked on ${c.chargeSimple} in Broward County, records show`,
+    (c, _) => `${c.muni} ${c.descriptor} was booked on ${c.chargeSimple}, ${c.agencyShort} records show`,
   ],
 
-  // ── SHORT_MOBILE ──────────────────────────────────────────────────────────
+  // ── SHORT_MOBILE ────────────────────────────────────────────────────────────
+  // 40–65 chars. Works in push notifications and social previews.
   SHORT_MOBILE: [
-    (c) => `${c.muni} ${c.descriptor} booked on ${c.chargeSimple}`,
-    (c) => `Broward arrest: ${c.muni} — ${c.chargeSimple}`,
-    (c) => `${c.muni} booking lists ${c.chargeSimple}`,
-    (c) => `Booked in Broward: ${c.muni} ${c.chargeSimple}`,
+    (c, _) => `${c.muni} ${c.descriptor} booked on ${c.chargeSimple}, Broward records say`,
+    (c, _) => `Broward: ${c.muni} ${c.descriptor} faces ${c.chargeSimple}, records show`,
+    (c, _) => `${c.muni} ${c.descriptor} in Broward booking on ${c.chargeSimple}`,
+    (c, _) => `${c.muni} ${c.descriptor} booked on ${c.chargeSimple} — officials`,
+  ],
+
+  // ── SAFER_FALLBACK ──────────────────────────────────────────────────────────
+  // Plain factual — used for sensitive stories and as the neutral option.
+  SAFER_FALLBACK: [
+    (c, _) => `${c.muni} ${c.descriptor} booked in Broward County on ${c.chargeSimple}, records show`,
+    (c, _) => `Broward County booking records list ${c.muni} ${c.descriptor} on ${c.chargeSimple}`,
+    (c, _) => `${c.muni} ${c.descriptor} arrested on ${c.chargeSimple}, according to ${c.sourceName}`,
+    (c, _) => `Arrest records show ${c.muni} ${c.descriptor} booked on ${c.chargeSimple} in Broward`,
   ],
 };
 
-// Neutral-only templates for sensitive stories (all typed STANDARD)
+// Neutral-only templates for sensitive stories
 const NEUTRAL_TEMPLATES: TemplateFn[] = [
-  (c) => `${c.muni} ${c.descriptor} booked in Broward County, records show`,
-  (c) => `Broward County booking record lists ${c.muni} arrest`,
-  (c) => `${c.muni} ${c.descriptor} listed in Broward booking records, according to ${c.sourceName}`,
+  (c, _) => `${c.muni} ${c.descriptor} booked in Broward County, records show`,
+  (c, _) => `Broward County booking record lists ${c.muni} arrest`,
+  (c, _) => `${c.muni} ${c.descriptor} listed in Broward booking records, according to ${c.sourceName}`,
 ];
 
-// ---------------------------------------------------------------------------
+// ===========================================================================
 // Scoring
-// ---------------------------------------------------------------------------
+// ===========================================================================
 
-// Words/phrases that imply guilt or are inflammatory — lower safety score
 const GUILT_PHRASES = [
-  /\bthug\b/i, /\bcrook\b/i, /\bmonster\b/i, /\bpredator\b/i, /\bfiend\b/i,
-  /career criminal/i, /\bcriminal\b/i, /caught red.?handed/i, /\bperp\b/i,
-  /\bfelony\b(?! (charge|filing|count|case))/i, // "felony" alone is ok as noun modifier
+  /\bdealer\b/i, /\bthug\b/i, /\bcrook\b/i, /\bmonster\b/i, /\bpredator\b/i,
+  /\bfiend\b/i, /career criminal/i, /\bcriminal\b(?! charge| case| record)/i,
+  /caught red.?handed/i, /\bperp\b/i, /\bguilty\b/i, /committed the/i,
+  /\bkiller\b/i, /\bassailant\b/i, /\boffender\b/i,
 ];
 
 const UNSUPPORTED_ADJECTIVES = [
   /\bshocking\b/i, /\bwild\b/i, /\bterrifying\b/i, /\bbrazen\b/i,
-  /\bviolent\b/i, /\bdisturbing\b/i, /\bhorrible\b/i, /\bsensational\b/i,
-  /\bbrutal\b/i, /\bvicious\b/i,
+  /\bviolent\b/i,  /\bdisturbing\b/i, /\bhorrible\b/i, /\bbrutal\b/i,
+  /\bvicious\b/i,  /\bbizarre\b/i, /\bheinous\b/i, /\bsickening\b/i,
+  /crime spree/i,  /\btaken down\b/i, /\bexposed\b/i, /\bbusted\b/i,
 ];
 
-const BASE_SCORES: Record<HeadlineType, { factual: number; catchy: number }> = {
-  STANDARD:     { factual: 9, catchy: 5 },
-  CATCHY:       { factual: 8, catchy: 8 },
-  ALLITERATIVE: { factual: 8, catchy: 7 },
-  RHYME:        { factual: 8, catchy: 8 },
-  IDIOM:        { factual: 8, catchy: 8 },
-  SHORT_MOBILE: { factual: 9, catchy: 6 },
+interface BaseScores { factual: number; catchy: number; sensationalism: number }
+const BASE: Record<HeadlineType, BaseScores> = {
+  DAILY_MAIL_HOOK: { factual: 8, catchy: 9, sensationalism: 8 },
+  DRAMATIC_LOCAL:  { factual: 8, catchy: 8, sensationalism: 7 },
+  CHARGE_FOCUSED:  { factual: 8, catchy: 7, sensationalism: 6 },
+  RECORDS_REVEAL:  { factual: 9, catchy: 7, sensationalism: 5 },
+  POLICE_SAY:      { factual: 9, catchy: 7, sensationalism: 6 },
+  SHORT_MOBILE:    { factual: 9, catchy: 6, sensationalism: 4 },
+  SAFER_FALLBACK:  { factual: 9, catchy: 5, sensationalism: 3 },
 };
 
 function scoreHeadline(
   text: string,
   type: HeadlineType,
-  isSensitive: boolean
-): { factual: number; catchy: number; reasons: string[] } {
-  let { factual, catchy } = { ...BASE_SCORES[type] };
+  ctx: HeadlineContext
+): { factual: number; catchy: number; sensationalism: number; reasons: string[] } {
+  let { factual, catchy, sensationalism } = { ...BASE[type] };
   const reasons: string[] = [];
 
-  // Guilt-implying language
   for (const re of GUILT_PHRASES) {
-    if (re.test(text)) {
-      factual -= 5;
-      reasons.push(`Contains guilt-implying language matching /${re.source}/`);
-    }
+    if (re.test(text)) { factual -= 5; reasons.push(`Guilt-implying language: "${re.source}"`); }
   }
-
-  // Unsupported adjectives
   for (const re of UNSUPPORTED_ADJECTIVES) {
-    if (re.test(text)) {
-      factual -= 3;
-      catchy -= 1;
-      reasons.push(`Contains unsupported adjective matching /${re.source}/`);
-    }
+    if (re.test(text)) { factual -= 3; catchy -= 1; reasons.push(`Unsupported adjective: "${re.source}"`); }
   }
 
-  // Length scoring
   const len = text.length;
-  if (len >= 45 && len <= 95) {
-    catchy += 1;
-  } else if (len < 30 || len > 130) {
-    catchy -= 2;
-    reasons.push(`Headline length (${len}) is outside preferred range`);
-  }
+  if (len >= 50 && len <= 110) catchy += 1;
+  else if (len < 25 || len > 140) { catchy -= 2; reasons.push(`Length ${len} outside optimal range`); }
 
-  // Sensitive story penalty — even neutral types score lower on catchiness
-  if (isSensitive) {
-    catchy = Math.min(catchy, 5);
-    if (type !== "STANDARD" && type !== "SHORT_MOBILE") {
+  if (ctx.isSensitive) {
+    catchy        = Math.min(catchy, 5);
+    sensationalism = Math.min(sensationalism, 3);
+    if (type !== "SAFER_FALLBACK" && type !== "SHORT_MOBILE") {
       factual -= 2;
-      reasons.push("Non-neutral headline type used on sensitive story");
+      reasons.push("Non-neutral type on sensitive story");
     }
   }
 
-  // Clamp
-  factual = Math.max(1, Math.min(10, factual));
-  catchy  = Math.max(1, Math.min(10, catchy));
+  factual        = Math.max(1, Math.min(10, factual));
+  catchy         = Math.max(1, Math.min(10, catchy));
+  sensationalism = Math.max(1, Math.min(10, sensationalism));
 
-  if (reasons.length === 0) {
-    reasons.push("Template is factually grounded in source fields with no prohibited language detected");
-  }
-
-  return { factual, catchy, reasons };
+  if (reasons.length === 0) reasons.push("Factually grounded template — no prohibited language detected");
+  return { factual, catchy, sensationalism, reasons };
 }
 
 function riskFromScore(factual: number): RiskLevel {
@@ -313,98 +408,121 @@ function riskFromScore(factual: number): RiskLevel {
   return "HIGH";
 }
 
-// Title-case first letter of each sentence/headline
-function toTitleCase(s: string): string {
+/** Measures how story-specific the headline is (higher = more unique to this record). */
+function computeUniquenessScore(text: string, ctx: HeadlineContext): number {
+  let score = 2;
+  // Contains the specific charge category (not just "a charge")
+  const chargeBase = ctx.chargeSimple.replace(/ charge$/, "");
+  if (new RegExp(chargeBase.replace(/[()]/g, "\\$&"), "i").test(text)) score += 3;
+  // Contains the municipality
+  if (new RegExp(ctx.muni, "i").test(text)) score += 2;
+  // Contains a specific detail (bond, count, agency)
+  if (/additional|second listed|bond set|bond listed|\$\d|held status|released on bond/.test(text)) score += 2;
+  // Contains agency name
+  if (new RegExp(ctx.agencyShort.split(" ")[0], "i").test(text)) score += 1;
+  return Math.min(score, 10);
+}
+
+function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// Which types to generate based on editorial tone
+// ===========================================================================
+
+function typesForTone(tone: EditorialTone): HeadlineType[] {
+  if (tone === "NEUTRAL") return ["SAFER_FALLBACK", "SHORT_MOBILE"];
+  if (tone === "CATCHY")  return ["DAILY_MAIL_HOOK", "DRAMATIC_LOCAL", "RECORDS_REVEAL", "POLICE_SAY", "SHORT_MOBILE", "SAFER_FALLBACK"];
+  // SENSATIONAL_CAUTIOUS (default) — all 7
+  return ["DAILY_MAIL_HOOK", "DRAMATIC_LOCAL", "CHARGE_FOCUSED", "RECORDS_REVEAL", "POLICE_SAY", "SHORT_MOBILE", "SAFER_FALLBACK"];
+}
+
+// ===========================================================================
 // Main export
-// ---------------------------------------------------------------------------
+// ===========================================================================
 
 /**
- * Generate a batch of headlines for the given story data.
+ * Generate a batch of tabloid-formula headlines for the given story data.
  *
- * @param story       - Structured story fields
- * @param batchNumber - 1-based batch counter (determines template variant)
- * @param safeOnly    - If true, generate only STANDARD type (for "safer rewrite")
+ * @param story        Structured story/record fields
+ * @param batchNumber  1-based batch counter — determines which template variant is used
+ * @param safeOnly     Generate only SAFER_FALLBACK (for "Safer rewrite" button)
+ * @param tone         Editorial tone (default: SENSATIONAL_CAUTIOUS)
  */
 export function generateHeadlines(
   story: HeadlineStoryData,
-  batchNumber: number = 1,
-  safeOnly: boolean = false
+  batchNumber = 1,
+  safeOnly = false,
+  tone: EditorialTone = "SENSATIONAL_CAUTIOUS"
 ): GeneratedHeadline[] {
   const sensitiveCategory = detectSensitiveCategory(story.charges);
-  const isSensitive = sensitiveCategory !== null;
-  const ctx = buildContext(story);
-  ctx.isSensitive = isSensitive;
+  const isSensitive       = sensitiveCategory !== null;
+  const ctx               = buildContext(story);
+  ctx.isSensitive         = isSensitive;
 
-  const results: GeneratedHeadline[] = [];
+  const variant = ((batchNumber - 1) % 4) as 0|1|2|3;
 
-  // Sensitive stories → only neutral STANDARD headlines
+  // Sensitive stories → only neutral SAFER_FALLBACK headlines
   if (isSensitive) {
-    for (let i = 0; i < 3; i++) {
-      const fn = NEUTRAL_TEMPLATES[(batchNumber - 1 + i) % NEUTRAL_TEMPLATES.length];
-      const text = toTitleCase(fn(ctx));
-      const { factual, catchy, reasons } = scoreHeadline(text, "STANDARD", true);
-      results.push({
-        headline_text: text,
-        headline_type: "STANDARD",
+    return NEUTRAL_TEMPLATES.map((fn, i) => {
+      const text = cap(fn(ctx, ((i + batchNumber - 1) % 4) as 0|1|2|3));
+      const deck = buildDeck(ctx, story);
+      const { factual, catchy, sensationalism, reasons } = scoreHeadline(text, "SAFER_FALLBACK", ctx);
+      return {
+        headline_text:        text,
+        deck,
+        headline_type:        "SAFER_FALLBACK" as HeadlineType,
         factual_safety_score: factual,
-        catchiness_score: catchy,
-        risk_level: riskFromScore(factual),
-        reason_for_score: reasons.join(". "),
-        source_fields_used: buildSourceFieldsUsed("STANDARD", story),
-      });
-    }
-    return results;
-  }
-
-  // Normal stories → all 6 types (or just STANDARD for safe rewrite)
-  const typesToGenerate: HeadlineType[] = safeOnly
-    ? ["STANDARD"]
-    : ["STANDARD", "CATCHY", "ALLITERATIVE", "RHYME", "IDIOM", "SHORT_MOBILE"];
-
-  for (const type of typesToGenerate) {
-    const templates = TEMPLATES[type];
-    const idx = (batchNumber - 1) % templates.length;
-    const raw = templates[idx](ctx);
-    // Append charges note to non-SHORT_MOBILE types when multiple charges exist
-    const withNote =
-      type !== "SHORT_MOBILE" && ctx.chargeCount > 1
-        ? raw + chargesNote(ctx)
-        : raw;
-    const text = toTitleCase(withNote);
-
-    const { factual, catchy, reasons } = scoreHeadline(text, type, false);
-
-    results.push({
-      headline_text: text,
-      headline_type: type,
-      factual_safety_score: factual,
-      catchiness_score: catchy,
-      risk_level: riskFromScore(factual),
-      reason_for_score: reasons.join(". "),
-      source_fields_used: buildSourceFieldsUsed(type, story),
+        catchiness_score:     catchy,
+        uniqueness_score:     computeUniquenessScore(text, ctx),
+        sensationalism_score: sensationalism,
+        risk_level:           riskFromScore(factual),
+        reason_for_score:     reasons.join(". "),
+        source_fields_used:   buildSourceFields(story),
+      };
     });
   }
 
-  return results;
+  // Determine which types to generate
+  const typesToGenerate: HeadlineType[] = safeOnly
+    ? ["SAFER_FALLBACK"]
+    : typesForTone(tone);
+
+  return typesToGenerate.map((type) => {
+    const templates = TEMPLATES[type];
+    const tIdx = (batchNumber - 1) % templates.length;
+    const rawText = templates[tIdx](ctx, variant);
+    const text    = cap(rawText);
+    const deck    = buildDeck(ctx, story);
+
+    const { factual, catchy, sensationalism, reasons } = scoreHeadline(text, type, ctx);
+
+    return {
+      headline_text:        text,
+      deck,
+      headline_type:        type,
+      factual_safety_score: factual,
+      catchiness_score:     catchy,
+      uniqueness_score:     computeUniquenessScore(text, ctx),
+      sensationalism_score: sensationalism,
+      risk_level:           riskFromScore(factual),
+      reason_for_score:     reasons.join(". "),
+      source_fields_used:   buildSourceFields(story),
+    };
+  });
 }
 
-// Track which story fields contributed to the headline
-function buildSourceFieldsUsed(
-  type: HeadlineType,
-  story: HeadlineStoryData
-): string[] {
+function buildSourceFields(story: HeadlineStoryData): string[] {
   const fields: string[] = [];
-  if (story.municipality) fields.push("municipality");
-  if (story.charges.length > 0) fields.push("charges[0]");
-  if (story.charges.length > 1) fields.push(`charges[1..${story.charges.length - 1}]`);
-  if (story.source_name) fields.push("source_name");
-  if (story.arrest_date) fields.push("arrest_date");
-  if (type === "CATCHY" || type === "SHORT_MOBILE") {
-    fields.push("subject_descriptor");
-  }
+  if (story.municipality)               fields.push("municipality");
+  if (story.charges.length > 0)         fields.push("charges[0]");
+  if (story.charges.length > 1)         fields.push(`charges[1..${story.charges.length - 1}]`);
+  if (story.source_name)                fields.push("source_name");
+  if (story.arrest_date)                fields.push("arrest_date");
+  if (story.bond)                       fields.push("bond");
+  if (story.release_status)             fields.push("release_status");
+  if (story.arresting_agency)           fields.push("arresting_agency");
+  if (story.subject_descriptor)         fields.push("subject_descriptor");
   return fields;
 }

@@ -4,12 +4,13 @@ import { useState } from "react";
 import type { HeadlineOption } from "@/lib/types";
 
 const TYPE_LABELS: Record<string, string> = {
-  STANDARD:     "Standard",
-  CATCHY:       "Catchy",
-  ALLITERATIVE: "Alliterative",
-  RHYME:        "Rhyme",
-  IDIOM:        "Idiom",
-  SHORT_MOBILE: "Mobile",
+  DAILY_MAIL_HOOK: "Long Hook",
+  DRAMATIC_LOCAL:  "Dramatic Local",
+  CHARGE_FOCUSED:  "Charge Hook",
+  RECORDS_REVEAL:  "Records Reveal",
+  POLICE_SAY:      "Police Say",
+  SHORT_MOBILE:    "Mobile",
+  SAFER_FALLBACK:  "Safer Fallback",
 };
 
 interface Props {

@@ -5,6 +5,116 @@ import { runSourceFetch } from "../src/lib/ingestion/runSourceFetch";
 
 const prisma = new PrismaClient();
 
+// ---------------------------------------------------------------------------
+// Helper — upsert a story + seed all 7 headline types across 2 batches
+// ---------------------------------------------------------------------------
+
+async function seedStoryWithHeadlines(data: {
+  slug: string;
+  headline_standard: string;
+  headline_catchy: string;
+  body: string;
+  source_name: string;
+  source_url?: string;
+  subject_name?: string;
+  subject_descriptor: string;
+  charges: string[];
+  booking_number?: string;
+  municipality: string;
+  arrest_date: Date;
+  bond?: string;
+  release_status?: string;
+  arresting_agency?: string;
+}) {
+  const story = await prisma.story.upsert({
+    where: { slug: data.slug },
+    update: {},
+    create: {
+      slug:                     data.slug,
+      headline_standard:        data.headline_standard,
+      headline_catchy:          data.headline_catchy,
+      editorial_tone:           "Catchy tabloid-style, fact-bound, legally cautious.",
+      editorial_tone_setting:   "SENSATIONAL_CAUTIOUS",
+      geography_focus:          "Fort Lauderdale / Broward County, Florida",
+      source_confidence_score:  0.9,
+      subject_descriptor:       data.subject_descriptor,
+      body:                     data.body,
+      status:                   "DRAFT",
+      source_name:              data.source_name,
+      source_url:               data.source_url ?? null,
+      subject_name:             data.subject_name ?? null,
+      charges:                  data.charges,
+      booking_number:           data.booking_number ?? null,
+      municipality:             data.municipality,
+      arrest_date:              data.arrest_date,
+    },
+  });
+
+  for (const batchNumber of [1, 2]) {
+    const existing = await prisma.storyHeadline.count({
+      where: { story_id: story.id, generation_batch: batchNumber },
+    });
+    if (existing > 0) continue;
+
+    const generated = generateHeadlines(
+      {
+        municipality:      data.municipality,
+        charges:           data.charges,
+        subject_name:      data.subject_name,
+        subject_descriptor: data.subject_descriptor,
+        source_name:       data.source_name,
+        arrest_date:       data.arrest_date,
+        booking_number:    data.booking_number,
+        geography_focus:   "Fort Lauderdale / Broward County, Florida",
+        bond:              data.bond,
+        release_status:    data.release_status,
+        arresting_agency:  data.arresting_agency,
+      },
+      batchNumber,
+      false,
+      "SENSATIONAL_CAUTIOUS"
+    );
+
+    await prisma.storyHeadline.createMany({
+      data: generated.map((h) => ({
+        story_id:             story.id,
+        headline_text:        h.headline_text,
+        deck:                 h.deck,
+        headline_type:        h.headline_type,
+        factual_safety_score: h.factual_safety_score,
+        catchiness_score:     h.catchiness_score,
+        uniqueness_score:     h.uniqueness_score,
+        sensationalism_score: h.sensationalism_score,
+        risk_level:           h.risk_level,
+        reason_for_score:     h.reason_for_score,
+        source_fields_used:   h.source_fields_used,
+        generation_batch:     batchNumber,
+      })),
+    });
+  }
+
+  // Pre-select the DAILY_MAIL_HOOK from batch 1 as the default
+  const hook = await prisma.storyHeadline.findFirst({
+    where: { story_id: story.id, headline_type: "DAILY_MAIL_HOOK", generation_batch: 1 },
+  });
+  if (hook && !hook.is_selected) {
+    await prisma.storyHeadline.update({
+      where: { id: hook.id },
+      data: { is_selected: true, approval_status: "APPROVED", approved_at: new Date() },
+    });
+    await prisma.story.update({
+      where: { id: story.id },
+      data: { headline_chosen: hook.headline_text },
+    });
+  }
+
+  return story;
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+
 async function main() {
   console.log("🌱 Seeding database…");
 
@@ -25,7 +135,7 @@ async function main() {
       base_url:             "https://apps2.browardsheriff.org/JailSearch/",
       description:          "Broward County Sheriff's Office daily booking register. Requires manual input (CAPTCHA-protected search).",
       is_enabled:           true,
-      fetch_interval_hours: 0, // manual only
+      fetch_interval_hours: 0,
       requires_manual:      true,
     },
     {
@@ -67,89 +177,117 @@ async function main() {
   ] as const;
 
   for (const s of sourceDefs) {
-    await prisma.source.upsert({
-      where: { id: (await prisma.source.findFirst({ where: { source_type: s.source_type } }))?.id ?? "new" },
-      update: {},
-      create: s,
-    });
+    const existing = await prisma.source.findFirst({ where: { source_type: s.source_type } });
+    if (!existing) await prisma.source.create({ data: s });
   }
   console.log("  ✓ Default sources");
 
-  // ── Run mock fetch for BSO Booking Register to populate sample records ──
-  const bsoSource = await prisma.source.findFirst({
-    where: { source_type: "BSO_BOOKING_REGISTER" },
-  });
-  if (bsoSource) {
-    const existingFetch = await prisma.sourceFetch.count({ where: { source_id: bsoSource.id } });
-    if (existingFetch === 0) {
-      try {
-        const result = await runSourceFetch(bsoSource.id, { useMock: true });
-        console.log(`  ✓ BSO mock fetch: ${result.recordsImported} records imported`);
-      } catch (e) {
-        console.warn("  ⚠ BSO mock fetch skipped:", e instanceof Error ? e.message : String(e));
-      }
-    }
-  }
-
-  // ── Run mock fetch for FLPD News Releases ──────────────────────────────
-  const flpdSource = await prisma.source.findFirst({
-    where: { source_type: "FLPD_NEWS_RELEASES" },
-  });
-  if (flpdSource) {
-    const existingFetch = await prisma.sourceFetch.count({ where: { source_id: flpdSource.id } });
-    if (existingFetch === 0) {
-      try {
-        const result = await runSourceFetch(flpdSource.id, { useMock: true });
-        console.log(`  ✓ FLPD mock fetch: ${result.recordsImported} records imported`);
-      } catch (e) {
-        console.warn("  ⚠ FLPD mock fetch skipped:", e instanceof Error ? e.message : String(e));
-      }
-    }
-  }
-
-  // ── Sample story with headline options (for UI testing) ─────────────────
-  const story1 = await prisma.story.upsert({
-    where: { slug: "sample-broward-drug-arrest-2024" },
-    update: {},
-    create: {
-      slug:                     "sample-broward-drug-arrest-2024",
-      headline_standard:        "Fort Lauderdale Resident Booked in Broward County on Drug Charge, Records Show",
-      headline_catchy:          "New in the Broward Booking Log: Fort Lauderdale Resident Listed on Drug Possession Charge",
-      editorial_tone:           "Catchy tabloid-style, fact-bound, legally cautious.",
-      geography_focus:          "Fort Lauderdale / Broward County, Florida",
-      source_confidence_score:  0.95,
-      subject_descriptor:       "man",
-      body:                     `A Fort Lauderdale man was booked into the Broward County Main Jail following a traffic stop in which deputies say they discovered cocaine, according to Broward County Sheriff's Office arrest records.\n\nAccording to booking documents, the arrest occurred on January 15, 2024. The subject was listed as facing one count of possession of cocaine and one count of possession with intent to sell or deliver a controlled substance.\n\nAn arrest or criminal charge is not a conviction. The individual is presumed innocent unless proven guilty in court.\n\n*To request a correction or removal, contact us.*`,
-      status:                   "DRAFT",
-      source_name:              "Broward County Sheriff's Office",
-      source_url:               "https://www.sheriff.org/",
-      subject_name:             "John Q. Sample",
-      charges:                  ["Possession of cocaine", "Possession with intent to sell or deliver a controlled substance"],
-      booking_number:           "2024-00001",
-      municipality:             "Fort Lauderdale",
-      incident_date:            new Date("2024-01-15"),
-      arrest_date:              new Date("2024-01-15"),
-    },
-  });
-
-  // Headline batches for story 1
-  for (const batchNumber of [1, 2]) {
-    const existing = await prisma.storyHeadline.count({ where: { story_id: story1.id, generation_batch: batchNumber } });
+  // ── Mock fetches ───────────────────────────────────────────────────────
+  for (const sourceType of ["BSO_BOOKING_REGISTER", "FLPD_NEWS_RELEASES"] as const) {
+    const src = await prisma.source.findFirst({ where: { source_type: sourceType } });
+    if (!src) continue;
+    const existing = await prisma.sourceFetch.count({ where: { source_id: src.id } });
     if (existing > 0) continue;
-    const generated = generateHeadlines(
-      { municipality: story1.municipality, charges: story1.charges, subject_name: story1.subject_name, subject_descriptor: story1.subject_descriptor, source_name: story1.source_name, arrest_date: story1.arrest_date, booking_number: story1.booking_number, geography_focus: story1.geography_focus },
-      batchNumber
-    );
-    await prisma.storyHeadline.createMany({
-      data: generated.map((h) => ({ story_id: story1.id, ...h, generation_batch: batchNumber })),
-    });
+    try {
+      const r = await runSourceFetch(src.id, { useMock: true });
+      console.log(`  ✓ ${sourceType} mock fetch: ${r.recordsImported} records imported`);
+    } catch (e) {
+      console.warn(`  ⚠ ${sourceType} mock fetch skipped:`, e instanceof Error ? e.message : e);
+    }
   }
-  const stdH = await prisma.storyHeadline.findFirst({ where: { story_id: story1.id, headline_type: "STANDARD", generation_batch: 1 } });
-  if (stdH && !stdH.is_selected) {
-    await prisma.storyHeadline.update({ where: { id: stdH.id }, data: { is_selected: true } });
-    await prisma.story.update({ where: { id: story1.id }, data: { headline_chosen: stdH.headline_text } });
+
+  // ── 4 Sample stories — each demonstrates different charge categories ─────
+  // These produce 7 × 2 batches = 14 headlines per story (56 total examples)
+
+  // Story 1 — Drug possession (multi-charge, bond set)
+  await seedStoryWithHeadlines({
+    slug:               "sample-fl-drug-possession-2024",
+    headline_standard:  "Fort Lauderdale Man Booked in Broward County on Drug Possession Charge, Records Show",
+    headline_catchy:    "Fort Lauderdale man is booked on drug possession charge after Broward records list additional listed count",
+    body:               `A Fort Lauderdale man was booked into the Broward County Main Jail on drug-related charges, according to Broward County Sheriff's Office arrest records.\n\nBooking records list a drug possession charge and an additional listed count.\n\nAn arrest or criminal charge is not a conviction. The individual is presumed innocent unless proven guilty in court.\n\n*To request a correction or removal, contact us.*`,
+    source_name:        "Broward County Sheriff's Office",
+    source_url:         "https://www.sheriff.org/",
+    subject_name:       "John Q. Sample",
+    subject_descriptor: "man",
+    charges:            ["Possession of cocaine", "Possession with intent to sell or deliver a controlled substance"],
+    booking_number:     "2024-00001",
+    municipality:       "Fort Lauderdale",
+    arrest_date:        new Date("2024-01-15"),
+    bond:               "$5,000",
+    release_status:     "Held",
+    arresting_agency:   "Broward County Sheriff's Office",
+  });
+
+  // Story 2 — DUI, single charge, released on bond
+  await seedStoryWithHeadlines({
+    slug:               "sample-pompano-dui-2024",
+    headline_standard:  "Pompano Beach Woman Booked in Broward County on DUI Charge, Records Show",
+    headline_catchy:    "Pompano Beach woman lands in Broward booking log on DUI charge as records reveal release on bond listed",
+    body:               `A Pompano Beach woman was booked into the Broward County Main Jail on a DUI charge, according to Broward County Sheriff's Office arrest records.\n\nRecords show the subject was released on bond following processing.\n\nAn arrest or criminal charge is not a conviction. The individual is presumed innocent unless proven guilty in court.\n\n*To request a correction or removal, contact us.*`,
+    source_name:        "Broward County Sheriff's Office",
+    subject_name:       "Jane R. Sample",
+    subject_descriptor: "woman",
+    charges:            ["Driving under the influence (DUI)"],
+    booking_number:     "2024-00002",
+    municipality:       "Pompano Beach",
+    arrest_date:        new Date("2024-02-10"),
+    bond:               "$500",
+    release_status:     "Released on bond",
+    arresting_agency:   "Broward County Sheriff's Office",
+  });
+
+  // Story 3 — Weapons charge (FLPD), two counts
+  await seedStoryWithHeadlines({
+    slug:               "sample-fl-weapons-2024",
+    headline_standard:  "Fort Lauderdale Man Booked in Broward County on Weapons Charge, Records Show",
+    headline_catchy:    "Fort Lauderdale man appears in Broward jail records on felon in possession of a firearm charge — additional listed count confirmed",
+    body:               `A Fort Lauderdale man was booked into the Broward County Main Jail on weapons-related charges following a traffic stop, according to Fort Lauderdale Police Department records.\n\nBooking records list a felon in possession of a firearm charge and a concealed weapon charge.\n\nAn arrest or criminal charge is not a conviction. The individual is presumed innocent unless proven guilty in court.\n\n*To request a correction or removal, contact us.*`,
+    source_name:        "Fort Lauderdale Police Department",
+    source_url:         "https://www.fortlauderdale.gov/departments/police",
+    subject_name:       "Jerome W. Sample",
+    subject_descriptor: "man",
+    charges:            ["Felon in possession of a firearm (F2)", "Carrying a concealed firearm without a license (F3)"],
+    booking_number:     "2024-00003",
+    municipality:       "Fort Lauderdale",
+    arrest_date:        new Date("2024-03-05"),
+    bond:               "$50,000",
+    release_status:     "Held",
+    arresting_agency:   "Fort Lauderdale Police Department",
+  });
+
+  // Story 4 — Theft/burglary (Pompano Beach), single count, different agency
+  await seedStoryWithHeadlines({
+    slug:               "sample-pompano-burglary-2024",
+    headline_standard:  "Pompano Beach Resident Booked in Broward County on Burglary Charge, Records Show",
+    headline_catchy:    "Broward records reveal Pompano Beach resident was booked on burglary charge and theft charge",
+    body:               `A Pompano Beach resident was booked into the Broward County Main Jail on burglary and theft charges, according to Broward County Sheriff's Office arrest records.\n\nBooking records list a burglary of a dwelling charge and a grand theft charge.\n\nAn arrest or criminal charge is not a conviction. The individual is presumed innocent unless proven guilty in court.\n\n*To request a correction or removal, contact us.*`,
+    source_name:        "Broward County Sheriff's Office",
+    subject_name:       "Terrell J. Sample",
+    subject_descriptor: "resident",
+    charges:            ["Burglary of a dwelling — unoccupied (F2)", "Grand theft — $10,000 to under $100,000 (F2)"],
+    booking_number:     "2024-00004",
+    municipality:       "Pompano Beach",
+    arrest_date:        new Date("2024-04-20"),
+    bond:               "$25,000",
+    release_status:     "Held",
+    arresting_agency:   "Broward County Sheriff's Office",
+  });
+
+  console.log("  ✓ 4 sample stories — 7 headline types × 2 batches each");
+
+  // ── Print sample headlines for visual inspection ─────────────────────────
+  const sampleHeadlines = await prisma.storyHeadline.findMany({
+    where: { generation_batch: 1 },
+    orderBy: [{ story_id: "asc" }, { headline_type: "asc" }],
+    select: { headline_type: true, headline_text: true, deck: true },
+    take: 28,
+  });
+
+  console.log("\n  Sample generated headlines (batch 1):");
+  for (const h of sampleHeadlines) {
+    console.log(`  [${h.headline_type.padEnd(16)}] ${h.headline_text}`);
+    if (h.deck) console.log(`  ${"".padEnd(18)} → ${h.deck}`);
   }
-  console.log("  ✓ Sample story with headline batches");
 
   console.log("\n✅ Seed complete.");
   console.log("   Admin: admin@browardnews.local / admin123!");

@@ -32,6 +32,7 @@ export async function PATCH(
     arrest_date: body.arrest_date ? new Date(body.arrest_date) : null,
     subject_name: body.subject_name || null,
     subject_descriptor: body.subject_descriptor || existing.subject_descriptor || "resident",
+    editorial_tone_setting: body.editorial_tone_setting || existing.editorial_tone_setting || "SENSATIONAL_CAUTIOUS",
     charges: body.charges ?? existing.charges,
     booking_number: body.booking_number || null,
     municipality: body.municipality || null,

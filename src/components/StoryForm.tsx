@@ -15,6 +15,7 @@ const DEFAULT: StoryFormData = {
   headline_catchy: "",
   headline_chosen: "",
   editorial_tone: "Catchy tabloid-style, fact-bound, legally cautious.",
+  editorial_tone_setting: "SENSATIONAL_CAUTIOUS",
   geography_focus: "Fort Lauderdale / Broward County, Florida",
   source_confidence_score: 0.9,
   body: "",
@@ -351,6 +352,21 @@ export default function StoryForm({ initialData, mode }: Props) {
               onChange={(e) => set("editorial_tone", e.target.value)}
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Headline Generator Tone{" "}
+              <span className="text-gray-400 text-xs">controls which headline styles are generated</span>
+            </label>
+            <select
+              value={data.editorial_tone_setting ?? "SENSATIONAL_CAUTIOUS"}
+              onChange={(e) => set("editorial_tone_setting", e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white"
+            >
+              <option value="SENSATIONAL_CAUTIOUS">Sensational but cautious (default)</option>
+              <option value="CATCHY">Catchy</option>
+              <option value="NEUTRAL">Neutral only</option>
+            </select>
           </div>
         </div>
         <div>

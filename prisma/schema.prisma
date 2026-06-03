@@ -18,6 +18,8 @@ model Story {
   headline_catchy         String
   headline_chosen         String?
   editorial_tone          String             @default("Catchy tabloid-style, fact-bound, legally cautious.")
+  /// Controls which headline style the generator targets for this story
+  editorial_tone_setting  EditorialTone      @default(SENSATIONAL_CAUTIOUS)
   geography_focus         String             @default("Fort Lauderdale / Broward County, Florida")
   source_confidence_score Float              @default(0.0)
   body                    String             @db.Text
@@ -61,7 +63,6 @@ model Source {
   base_url              String
   description           String?
   is_enabled            Boolean      @default(true)
-  /// How often to auto-fetch (hours). 0 = manual only.
   fetch_interval_hours  Int          @default(24)
   requires_manual       Boolean      @default(false)
   last_fetched_at       DateTime?
@@ -105,7 +106,7 @@ model SourceFetch {
 }
 
 // ===========================================================================
-// Ingestion — Parsed records (pre-story staging area)
+// Ingestion — Parsed records
 // ===========================================================================
 
 model ParsedRecord {
@@ -122,7 +123,6 @@ model ParsedRecord {
   parser_name               String
   parser_confidence_score   Float        @default(0.0)
 
-  // Structured arrest fields
   person_name               String?
   booking_date              DateTime?
   booking_number            String?
@@ -136,13 +136,10 @@ model ParsedRecord {
   court_case_number         String?
   court_case_url            String?
 
-  // Workflow
   record_status             RecordStatus @default(NEW)
-  /// true when charges or context indicate a minor is involved
   is_suppressed             Boolean      @default(false)
   suppression_reason        String?
   admin_notes               String?      @db.Text
-  /// Story.id — set after draft is generated
   story_id                  String?
   reviewed_by               String?
   reviewed_at               DateTime?
@@ -169,7 +166,6 @@ model IngestionError {
   id              String      @id @default(cuid())
   source_fetch_id String
   source_fetch    SourceFetch @relation(fields: [source_fetch_id], references: [id], onDelete: Cascade)
-  /// FETCH_FAILED | PARSE_ERROR | VALIDATION_ERROR | CAPTCHA_REQUIRED | DUPLICATE
   error_type      String
   message         String      @db.Text
   raw_input       String?     @db.Text
@@ -189,8 +185,8 @@ model DedupeCandidate {
   record               ParsedRecord  @relation("RecordDedupe",    fields: [record_id],           references: [id], onDelete: Cascade)
   duplicate_record_id  String
   duplicate_record     ParsedRecord  @relation("DuplicateDedupe", fields: [duplicate_record_id], references: [id], onDelete: Cascade)
-  similarity_score     Float         // 0.0 – 1.0
-  match_fields         String[]      // ["person_name", "booking_date", ...]
+  similarity_score     Float
+  match_fields         String[]
   resolution           DupeResolution @default(PENDING)
   resolved_by          String?
   resolved_at          DateTime?
@@ -208,13 +204,19 @@ model StoryHeadline {
   id                    String          @id @default(cuid())
   story_id              String
   story                 Story           @relation(fields: [story_id], references: [id], onDelete: Cascade)
+
   headline_text         String
+  /// Factual subheadline — one sentence, source-attributed, safe for display below the headline
+  deck                  String?         @db.Text
   headline_type         HeadlineType
-  factual_safety_score  Int
-  catchiness_score      Int
+  factual_safety_score  Int             /// 1–10
+  catchiness_score      Int             /// 1–10
+  uniqueness_score      Int             @default(5) /// 1–10 (how story-specific vs generic)
+  sensationalism_score  Int             @default(5) /// 1–10 (drama level — not quality)
   risk_level            RiskLevel
   reason_for_score      String          @db.Text
   source_fields_used    String[]
+
   approval_status       HeadlineStatus  @default(PENDING)
   approved_by           String?
   approved_at           DateTime?
@@ -273,13 +275,16 @@ enum StoryStatus {
   REJECTED
 }
 
+/// Seven headline types — replaces the old 6-type system.
+/// All types use the [person descriptor + event + specific detail + legal qualifier] formula.
 enum HeadlineType {
-  STANDARD
-  CATCHY
-  ALLITERATIVE
-  RHYME
-  IDIOM
-  SHORT_MOBILE
+  DAILY_MAIL_HOOK   /// Long dramatic hook — full tabloid formula
+  DRAMATIC_LOCAL    /// Punchy, place-forward
+  CHARGE_FOCUSED    /// Charge is the narrative hook
+  RECORDS_REVEAL    /// Records are the narrator
+  POLICE_SAY        /// Authority attribution leads
+  SHORT_MOBILE      /// 35–65 char mobile-optimised version
+  SAFER_FALLBACK    /// Neutral factual — always generated; used for sensitive stories
 }
 
 enum RiskLevel {
@@ -292,6 +297,13 @@ enum HeadlineStatus {
   PENDING
   APPROVED
   REJECTED
+}
+
+/// Editorial tone setting on a story — controls which headline style to emphasise
+enum EditorialTone {
+  NEUTRAL                /// Only generate SAFER_FALLBACK + SHORT_MOBILE
+  CATCHY                 /// Generate all types, moderate sensationalism
+  SENSATIONAL_CAUTIOUS   /// Generate all types, full dramatic formula (default)
 }
 
 enum NotificationType {

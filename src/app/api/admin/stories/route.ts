@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
       arrest_date: body.arrest_date ? new Date(body.arrest_date) : null,
       subject_name: body.subject_name || null,
       subject_descriptor: body.subject_descriptor || "resident",
+      editorial_tone_setting: body.editorial_tone_setting || "SENSATIONAL_CAUTIOUS",
       charges: body.charges ?? [],
       booking_number: body.booking_number || null,
       municipality: body.municipality || null,
