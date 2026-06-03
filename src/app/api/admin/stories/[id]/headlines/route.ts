@@ -8,6 +8,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { generateHeadlines, detectSensitiveCategory } from "@/lib/headline-generator";
+import { notifyBatchReady } from "@/lib/notify";
 
 // ── GET ──────────────────────────────────────────────────────────────────────
 
@@ -81,14 +82,25 @@ export async function POST(
       reason_for_score: h.reason_for_score,
       source_fields_used: h.source_fields_used,
       generation_batch: nextBatch,
+      // approval_status defaults to PENDING via schema default
     })),
   });
 
-  // Return the newly created headlines
+  // Fetch new headlines to return + fire notification (non-blocking)
   const newHeadlines = await prisma.storyHeadline.findMany({
     where: { story_id: params.id, generation_batch: nextBatch },
     orderBy: { headline_type: "asc" },
   });
+
+  // Fire-and-forget notification
+  notifyBatchReady({
+    storyId: params.id,
+    storySlug: story.slug,
+    storyHeadline: story.headline_standard,
+    municipality: story.municipality,
+    batchNumber: nextBatch,
+    headlineCount: created.count,
+  }).catch((err) => console.warn("[notify] non-fatal:", err));
 
   return NextResponse.json(
     { batch: nextBatch, count: created.count, headlines: newHeadlines },

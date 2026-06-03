@@ -2,10 +2,12 @@
  * PATCH /api/admin/stories/[id]/headlines/[hid]
  *
  * Supported actions (body.action):
- *   "select"  — mark this headline as selected (deselects all others for this story)
- *   "block"   — mark headline as blocked (not available for publishing)
- *   "unblock" — remove block
- *   "confirm" — admin confirmation for MEDIUM-risk headline (sets is_selected)
+ *   "approve"  — mark headline APPROVED (eligible for selection)
+ *   "reject"   — mark headline REJECTED (body.reason optional)
+ *   "select"   — mark as selected (must be APPROVED + LOW risk, or confirm for MEDIUM)
+ *   "confirm"  — admin confirmation for MEDIUM-risk headline
+ *   "block"    — hard-block headline
+ *   "unblock"  — remove block
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -13,6 +15,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { validateHeadline } from "@/lib/headline-validator";
+import type { HeadlineType } from "@/lib/types";
 
 export async function PATCH(
   req: NextRequest,
@@ -31,7 +34,35 @@ export async function PATCH(
   }
 
   const body = await req.json().catch(() => ({}));
-  const action: string = body.action ?? "select";
+  const action: string = body.action ?? "approve";
+  const adminId = (session.user as { id?: string }).id ?? null;
+
+  // ── Approve ───────────────────────────────────────────────────────────────
+  if (action === "approve") {
+    const updated = await prisma.storyHeadline.update({
+      where: { id: params.hid },
+      data: {
+        approval_status: "APPROVED",
+        approved_by: adminId,
+        approved_at: new Date(),
+        rejection_reason: null,
+      },
+    });
+    return NextResponse.json(updated);
+  }
+
+  // ── Reject ────────────────────────────────────────────────────────────────
+  if (action === "reject") {
+    const updated = await prisma.storyHeadline.update({
+      where: { id: params.hid },
+      data: {
+        approval_status: "REJECTED",
+        rejection_reason: body.reason ?? null,
+        is_selected: false,
+      },
+    });
+    return NextResponse.json(updated);
+  }
 
   // ── Block / unblock ───────────────────────────────────────────────────────
   if (action === "block") {
@@ -52,6 +83,19 @@ export async function PATCH(
 
   // ── Select / confirm ──────────────────────────────────────────────────────
   if (action === "select" || action === "confirm") {
+    // Must be APPROVED before it can be selected
+    if (headline.approval_status !== "APPROVED") {
+      return NextResponse.json(
+        {
+          error:
+            `Headline must be APPROVED before it can be selected. ` +
+            `Current status: ${headline.approval_status}. ` +
+            `Use the "Approve" button first.`,
+        },
+        { status: 422 }
+      );
+    }
+
     // HIGH risk → always blocked
     if (headline.risk_level === "HIGH") {
       return NextResponse.json(
@@ -82,7 +126,7 @@ export async function PATCH(
     // Run validation
     const validation = validateHeadline({
       headline_text: headline.headline_text,
-      headline_type: headline.headline_type as Parameters<typeof validateHeadline>[0]["headline_type"],
+      headline_type: headline.headline_type as HeadlineType,
       story: {
         charges: headline.story.charges,
         municipality: headline.story.municipality,
@@ -102,7 +146,7 @@ export async function PATCH(
       );
     }
 
-    // Deselect all other headlines for this story, then select this one
+    // Deselect all others → select this one
     await prisma.storyHeadline.updateMany({
       where: { story_id: params.id, is_selected: true },
       data: { is_selected: false },

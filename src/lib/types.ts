@@ -15,6 +15,8 @@ export type HeadlineType =
 
 export type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
 
+export type HeadlineStatus = "PENDING" | "APPROVED" | "REJECTED";
+
 export type SensitiveCategory =
   | "SEX_CRIME"
   | "DOMESTIC_VIOLENCE"
@@ -55,6 +57,10 @@ export interface HeadlineOption {
   risk_level: RiskLevel;
   reason_for_score: string;
   source_fields_used: string[];
+  approval_status: HeadlineStatus;
+  approved_by: string | null;
+  approved_at: string | null;
+  rejection_reason: string | null;
   is_selected: boolean;
   is_blocked: boolean;
   generation_batch: number;

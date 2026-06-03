@@ -367,7 +367,13 @@ export default function StoryForm({ initialData, mode }: Props) {
 
       {/* Headline Options Panel — only visible after story is saved (edit mode) */}
       {mode === "edit" && initialData?.id ? (
-        <HeadlinePanel storyId={initialData.id} />
+        <HeadlinePanel
+          storyId={initialData.id}
+          municipality={data.municipality ?? "Broward County"}
+          arrestDate={data.arrest_date ?? null}
+          sourceName={data.source_name}
+          charges={data.charges}
+        />
       ) : (
         <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg p-5 text-sm text-gray-500 text-center">
           <p className="font-medium">Headline Generator</p>

@@ -42,6 +42,7 @@ model Story {
   admin_notes           String?            @db.Text
 
   headlines             StoryHeadline[]
+  notifications         HeadlineNotification[]
 
   @@index([status])
   @@index([created_at])
@@ -53,27 +54,53 @@ model Story {
 // ---------------------------------------------------------------------------
 
 model StoryHeadline {
-  id                    String       @id @default(cuid())
+  id                    String          @id @default(cuid())
   story_id              String
-  story                 Story        @relation(fields: [story_id], references: [id], onDelete: Cascade)
+  story                 Story           @relation(fields: [story_id], references: [id], onDelete: Cascade)
 
   headline_text         String
   headline_type         HeadlineType
-  factual_safety_score  Int          /// 1–10
-  catchiness_score      Int          /// 1–10
+  factual_safety_score  Int             /// 1–10
+  catchiness_score      Int             /// 1–10
   risk_level            RiskLevel
-  reason_for_score      String       @db.Text
+  reason_for_score      String          @db.Text
   source_fields_used    String[]
 
-  is_selected           Boolean      @default(false)
-  is_blocked            Boolean      @default(false)
-  generation_batch      Int          @default(1)
+  /// Approval workflow status — independent of story publish status
+  approval_status       HeadlineStatus  @default(PENDING)
+  approved_by           String?         /// admin user id
+  approved_at           DateTime?
+  rejection_reason      String?
 
-  created_at            DateTime     @default(now())
+  is_selected           Boolean         @default(false)
+  is_blocked            Boolean         @default(false)
+  generation_batch      Int             @default(1)
+
+  created_at            DateTime        @default(now())
 
   @@index([story_id])
   @@index([is_selected])
+  @@index([approval_status])
   @@index([story_id, generation_batch])
+}
+
+// ---------------------------------------------------------------------------
+// HeadlineNotification — tracks in-app and email alerts per story batch
+// ---------------------------------------------------------------------------
+
+model HeadlineNotification {
+  id           String               @id @default(cuid())
+  story_id     String
+  story        Story                @relation(fields: [story_id], references: [id], onDelete: Cascade)
+  batch        Int
+  type         NotificationType     @default(BATCH_READY)
+  sent_at      DateTime             @default(now())
+  dismissed_at DateTime?
+  email_sent   Boolean              @default(false)
+  email_error  String?
+
+  @@index([story_id])
+  @@index([dismissed_at])
 }
 
 // ---------------------------------------------------------------------------
@@ -113,6 +140,18 @@ enum RiskLevel {
   LOW
   MEDIUM
   HIGH
+}
+
+/// Per-headline approval mini-workflow
+enum HeadlineStatus {
+  PENDING    /// generated, not yet reviewed
+  APPROVED   /// admin approved — eligible for selection
+  REJECTED   /// admin rejected — not selectable
+}
+
+enum NotificationType {
+  BATCH_READY    /// new batch generated, needs admin review
+  NEEDS_HEADLINE /// story approaching publish but no headline selected
 }
 
 /// When set, only neutral headline types are generated and only LOW-risk

@@ -10,6 +10,13 @@ export default async function AdminDashboard() {
     prisma.story.count({ where: { status: "REJECTED" } }),
   ]);
 
+  // Headlines pending approval (distinct story count)
+  const headlinesPendingGroups = await prisma.storyHeadline.groupBy({
+    by: ["story_id"],
+    where: { approval_status: "PENDING" },
+  });
+  const headlinesPending = headlinesPendingGroups.length;
+
   const recent = await prisma.story.findMany({
     orderBy: { updated_at: "desc" },
     take: 10,
@@ -35,20 +42,29 @@ export default async function AdminDashboard() {
     <div className="max-w-5xl mx-auto">
       <h1 className="text-2xl font-headline font-bold mb-6">Dashboard</h1>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
         {[
-          { label: "Drafts", count: drafts, status: "DRAFT" },
-          { label: "Pending Review", count: pending, status: "PENDING_REVIEW" },
-          { label: "Approved", count: approved, status: "APPROVED" },
-          { label: "Published", count: published, status: "PUBLISHED" },
-          { label: "Rejected", count: rejected, status: "REJECTED" },
+          { label: "Drafts",           count: drafts,            href: "/admin/stories?status=DRAFT" },
+          { label: "Pending Review",   count: pending,           href: "/admin/stories?status=PENDING_REVIEW" },
+          { label: "Approved",         count: approved,          href: "/admin/stories?status=APPROVED" },
+          { label: "Published",        count: published,         href: "/admin/stories?status=PUBLISHED" },
+          { label: "Rejected",         count: rejected,          href: "/admin/stories?status=REJECTED" },
+          { label: "Headlines to Review", count: headlinesPending, href: "/admin/headlines" },
         ].map((s) => (
           <Link
-            key={s.status}
-            href={`/admin/stories?status=${s.status}`}
-            className="bg-white rounded-lg shadow p-4 text-center hover:shadow-md transition-shadow"
+            key={s.href}
+            href={s.href}
+            className={`bg-white rounded-lg shadow p-4 text-center hover:shadow-md transition-shadow ${
+              s.label === "Headlines to Review" && s.count > 0
+                ? "border-2 border-brand-red"
+                : ""
+            }`}
           >
-            <p className="text-3xl font-bold text-brand-dark">{s.count}</p>
+            <p className={`text-3xl font-bold ${
+              s.label === "Headlines to Review" && s.count > 0
+                ? "text-brand-red"
+                : "text-brand-dark"
+            }`}>{s.count}</p>
             <p className="text-sm text-gray-500 mt-1">{s.label}</p>
           </Link>
         ))}

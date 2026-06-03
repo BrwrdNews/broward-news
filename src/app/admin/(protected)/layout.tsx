@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import SessionProvider from "@/components/SessionProvider";
+import AdminNavBadge from "@/components/AdminNavBadge";
 
 export default async function ProtectedAdminLayout({
   children,
@@ -35,6 +36,7 @@ export default async function ProtectedAdminLayout({
             >
               + New Story
             </Link>
+            <AdminNavBadge />
           </div>
           <div className="flex items-center gap-4 text-sm">
             <span className="text-gray-400">{session.user?.email}</span>
