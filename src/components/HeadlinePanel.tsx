@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import type { HeadlineOption, RiskLevel, HeadlineStatus } from "@/lib/types";
+import type { HeadlineOption, RiskLevel, HeadlineStatus, EditorialTone } from "@/lib/types";
 import HeadlinePreviewModal from "@/components/HeadlinePreviewModal";
 
 // ---------------------------------------------------------------------------
@@ -30,13 +30,28 @@ const APPROVAL_STYLES: Record<HeadlineStatus, string> = {
   REJECTED: "bg-red-100 text-red-600",
 };
 
-function ScorePill({ score, color }: { score: number; color: "green" | "blue" }) {
+function ScorePill({
+  label,
+  score,
+  color,
+}: {
+  label: string;
+  score: number;
+  color: "green" | "blue" | "orange";
+}) {
   const base =
-    score >= 8 ? (color === "green" ? "bg-green-100 text-green-800" : "bg-blue-100 text-blue-800")
-    : score >= 5 ? "bg-yellow-100 text-yellow-800"
-    : "bg-red-100 text-red-700";
+    color === "orange"
+      ? score >= 7 ? "bg-orange-100 text-orange-800" : score >= 5 ? "bg-yellow-100 text-yellow-800" : "bg-gray-100 text-gray-600"
+      : score >= 8
+      ? color === "green"
+        ? "bg-green-100 text-green-800"
+        : "bg-blue-100 text-blue-800"
+      : score >= 5
+      ? "bg-yellow-100 text-yellow-800"
+      : "bg-red-100 text-red-700";
   return (
-    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-bold ${base}`}>
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${base}`}>
+      <span className="text-[10px] font-normal opacity-70">{label}</span>
       {score}/10
     </span>
   );
@@ -78,6 +93,7 @@ export default function HeadlinePanel({
   const [rejectReason, setRejectReason] = useState("");
   const [globalError, setGlobalError] = useState("");
   const [globalSuccess, setGlobalSuccess] = useState("");
+  const [tone, setTone] = useState<EditorialTone>("SENSATIONAL_CAUTIOUS");
 
   // A/B preview state — up to 2 headlines selected for comparison
   const [previewIds, setPreviewIds] = useState<string[]>([]);
@@ -107,7 +123,7 @@ export default function HeadlinePanel({
       const res = await fetch(`/api/admin/stories/${storyId}/headlines`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ safeOnly }),
+        body: JSON.stringify({ safeOnly, tone }),
       });
       if (!res.ok) {
         const j = await res.json();
@@ -248,7 +264,7 @@ export default function HeadlinePanel({
   function togglePreview(hid: string) {
     setPreviewIds((ids) => {
       if (ids.includes(hid)) return ids.filter((id) => id !== hid);
-      if (ids.length >= 2) return [ids[1], hid]; // slide window
+      if (ids.length >= 2) return [ids[1], hid];
       return [...ids, hid];
     });
   }
@@ -270,9 +286,9 @@ export default function HeadlinePanel({
   // ---------------------------------------------------------------------------
 
   return (
-    <section className="bg-white rounded-lg shadow p-6 space-y-4">
+    <section className="bg-white rounded-lg shadow p-6 space-y-5">
       {/* Header */}
-      <div className="flex items-start justify-between border-b pb-3 gap-4">
+      <div className="flex items-start justify-between border-b pb-4 gap-4">
         <div>
           <h2 className="font-semibold text-gray-700 text-base">Headline Options</h2>
           <p className="text-xs text-gray-400 mt-0.5">
@@ -301,6 +317,25 @@ export default function HeadlinePanel({
         </div>
       </div>
 
+      {/* Tone selector */}
+      <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-md px-4 py-3">
+        <label className="text-sm font-medium text-gray-700 shrink-0">
+          Headline Generator Tone
+        </label>
+        <select
+          value={tone}
+          onChange={(e) => setTone(e.target.value as EditorialTone)}
+          className="border border-gray-300 rounded px-3 py-1.5 text-sm bg-white"
+        >
+          <option value="SENSATIONAL_CAUTIOUS">Sensational but cautious (default)</option>
+          <option value="CATCHY">Catchy</option>
+          <option value="NEUTRAL">Neutral only</option>
+        </select>
+        <p className="text-xs text-gray-400">
+          Controls which headline styles are generated in the next batch.
+        </p>
+      </div>
+
       {/* Global messages */}
       {globalError && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2 rounded">
@@ -327,6 +362,9 @@ export default function HeadlinePanel({
             Currently selected headline
           </p>
           <p className="text-sm font-medium text-blue-900">{selectedHeadline.headline_text}</p>
+          {selectedHeadline.deck && (
+            <p className="text-xs text-blue-600 italic mt-1">{selectedHeadline.deck}</p>
+          )}
           <p className="text-xs text-blue-500 mt-1">
             {TYPE_LABELS[selectedHeadline.headline_type]} &middot; Batch {selectedHeadline.generation_batch}
           </p>
@@ -342,251 +380,221 @@ export default function HeadlinePanel({
         </div>
       )}
 
-      {/* Batches */}
+      {/* Batches — card layout */}
       {batches.map((batch) => {
         const batchHeadlines = headlines.filter((h) => h.generation_batch === batch);
         return (
           <div key={batch}>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
               Batch {batch}
               {batch === batches[0] && (
                 <span className="ml-2 bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded text-xs normal-case">newest</span>
               )}
             </p>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
-                    <th className="px-2 py-2 border border-gray-200 w-6">
-                      <span className="sr-only">Preview select</span>
-                    </th>
-                    <th className="text-left px-3 py-2 border border-gray-200 w-[30%]">Headline + Deck</th>
-                    <th className="text-left px-3 py-2 border border-gray-200">Type</th>
-                    <th className="text-center px-3 py-2 border border-gray-200">Safety</th>
-                    <th className="text-center px-3 py-2 border border-gray-200">Catchy</th>
-                    <th className="text-center px-3 py-2 border border-gray-200">Unique</th>
-                    <th className="text-center px-3 py-2 border border-gray-200">Drama</th>
-                    <th className="text-center px-3 py-2 border border-gray-200">Risk</th>
-                    <th className="text-center px-3 py-2 border border-gray-200">Approval</th>
-                    <th className="text-left px-3 py-2 border border-gray-200">Notes</th>
-                    <th className="text-center px-3 py-2 border border-gray-200">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {batchHeadlines.map((h) => {
-                    const isSelected      = h.is_selected;
-                    const isBlocked       = h.is_blocked || h.risk_level === "HIGH";
-                    const isRejected      = h.approval_status === "REJECTED";
-                    const isPendingConfirm = pendingConfirm === h.id;
-                    const isPreviewPicked = previewIds.includes(h.id);
-                    const rowBg = isSelected ? "bg-blue-50" : isBlocked || isRejected ? "bg-gray-50 opacity-60" : "";
+            <div className="space-y-3">
+              {batchHeadlines.map((h) => {
+                const isSelected       = h.is_selected;
+                const isBlocked        = h.is_blocked || h.risk_level === "HIGH";
+                const isRejected       = h.approval_status === "REJECTED";
+                const isPendingConfirm = pendingConfirm === h.id;
+                const isPreviewPicked  = previewIds.includes(h.id);
 
-                    return (
-                      <tr key={h.id} className={`${rowBg} border-b border-gray-100`}>
-                        {/* Preview checkbox */}
-                        <td className="px-2 py-2 border border-gray-200 text-center align-top">
-                          <input
-                            type="checkbox"
-                            checked={isPreviewPicked}
-                            onChange={() => togglePreview(h.id)}
-                            title="Add to preview"
-                            className="cursor-pointer accent-brand-red"
-                          />
-                        </td>
+                const cardBorder = isSelected
+                  ? "border-blue-400 bg-blue-50"
+                  : isBlocked || isRejected
+                  ? "border-gray-200 bg-gray-50 opacity-60"
+                  : "border-gray-200 bg-white";
 
-                        {/* Headline text + deck */}
-                        <td className="px-3 py-2 border border-gray-200 align-top">
-                          <p className="font-medium text-gray-800 leading-snug">{h.headline_text}</p>
-                          {h.deck && (
-                            <p className="text-xs text-gray-500 italic mt-1 leading-snug border-l-2 border-gray-200 pl-2">{h.deck}</p>
-                          )}
-                          <p className="text-xs text-gray-400 mt-0.5">{h.headline_text.length} chars</p>
+                return (
+                  <div
+                    key={h.id}
+                    className={`border rounded-lg p-4 ${cardBorder}`}
+                  >
+                    {/* Top row: checkbox + headline text + approval badge */}
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={isPreviewPicked}
+                        onChange={() => togglePreview(h.id)}
+                        title="Add to A/B preview"
+                        className="mt-1 cursor-pointer accent-brand-red shrink-0"
+                      />
+
+                      <div className="flex-1 min-w-0">
+                        {/* Headline */}
+                        <p className="font-semibold text-gray-900 text-base leading-snug">
+                          {h.headline_text}
+                        </p>
+
+                        {/* Deck / subheadline */}
+                        {h.deck ? (
+                          <p className="text-sm text-gray-500 italic mt-1 leading-snug">
+                            {h.deck}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-gray-300 italic mt-1">No deck — regenerate to include one.</p>
+                        )}
+
+                        {/* Char count + selected badge */}
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                          <span className="text-xs text-gray-400">{h.headline_text.length} chars</span>
                           {isSelected && (
-                            <span className="inline-block mt-1 text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded">✓ Selected</span>
+                            <span className="text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded font-semibold">✓ Selected</span>
                           )}
-                          {h.rejection_reason && (
-                            <p className="text-xs text-red-500 mt-1">Rejected: {h.rejection_reason}</p>
+                          {h.risk_level === "HIGH" && (
+                            <span className="text-xs bg-red-100 text-red-700 font-semibold px-1.5 py-0.5 rounded">Blocked — High Risk</span>
                           )}
-                          {messages[h.id] && (
-                            <p className={`text-xs mt-1 ${actionState[h.id] === "error" ? "text-red-600" : "text-yellow-700"}`}>
-                              {messages[h.id]}
-                            </p>
-                          )}
-                          {(validationErrors[h.id] ?? []).map((e, i) => (
-                            <p key={i} className="text-xs text-red-600 mt-0.5">⚠ {e}</p>
-                          ))}
-                          {/* Reject reason input */}
-                          {rejectingId === h.id && (
-                            <div className="mt-2 flex gap-2 items-start">
-                              <input
-                                type="text"
-                                value={rejectReason}
-                                onChange={(e) => setRejectReason(e.target.value)}
-                                placeholder="Rejection reason (optional)"
-                                className="flex-1 border border-gray-300 rounded px-2 py-1 text-xs"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => rejectHeadline(h.id)}
-                                disabled={actionState[h.id] === "loading"}
-                                className="text-xs bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 disabled:opacity-50"
-                              >
-                                Confirm
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => { setRejectingId(null); setRejectReason(""); }}
-                                className="text-xs text-gray-500 px-1 py-1"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          )}
-                        </td>
+                        </div>
+                      </div>
 
-                        {/* Type */}
-                        <td className="px-3 py-2 border border-gray-200 align-top whitespace-nowrap">
-                          <span className="text-xs text-gray-600">{TYPE_LABELS[h.headline_type]}</span>
-                        </td>
+                      {/* Approval badge top-right */}
+                      <span className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full ${APPROVAL_STYLES[h.approval_status as HeadlineStatus]}`}>
+                        {h.approval_status}
+                      </span>
+                    </div>
 
-                        {/* Safety score */}
-                        <td className="px-3 py-2 border border-gray-200 text-center align-top">
-                          <ScorePill score={h.factual_safety_score} color="green" />
-                        </td>
+                    {/* Score + metadata row */}
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
+                        {TYPE_LABELS[h.headline_type]}
+                      </span>
+                      <ScorePill label="Safety"  score={h.factual_safety_score}  color="green"  />
+                      <ScorePill label="Catchy"  score={h.catchiness_score}       color="blue"   />
+                      <ScorePill label="Unique"  score={h.uniqueness_score}       color="blue"   />
+                      <ScorePill label="Drama"   score={h.sensationalism_score}   color="orange" />
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${RISK_STYLES[h.risk_level as RiskLevel]}`}>
+                        {h.risk_level} risk
+                      </span>
+                      {h.approved_at && (
+                        <span className="text-xs text-gray-400">
+                          Approved {new Date(h.approved_at).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
 
-                        {/* Catchiness score */}
-                        <td className="px-3 py-2 border border-gray-200 text-center align-top">
-                          <ScorePill score={h.catchiness_score} color="blue" />
-                        </td>
+                    {/* Notes */}
+                    {h.reason_for_score && (
+                      <p className="mt-2 text-xs text-gray-500 leading-relaxed">{h.reason_for_score}</p>
+                    )}
+                    {h.source_fields_used.length > 0 && (
+                      <p className="text-xs text-gray-400 mt-0.5">Fields used: {h.source_fields_used.join(", ")}</p>
+                    )}
+                    {h.rejection_reason && (
+                      <p className="text-xs text-red-500 mt-1">Rejected: {h.rejection_reason}</p>
+                    )}
 
-                        {/* Uniqueness score */}
-                        <td className="px-3 py-2 border border-gray-200 text-center align-top">
-                          <ScorePill score={h.uniqueness_score} color="blue" />
-                        </td>
+                    {/* Inline messages */}
+                    {messages[h.id] && (
+                      <p className={`text-xs mt-1.5 ${actionState[h.id] === "error" ? "text-red-600" : "text-yellow-700"}`}>
+                        {messages[h.id]}
+                      </p>
+                    )}
+                    {(validationErrors[h.id] ?? []).map((e, i) => (
+                      <p key={i} className="text-xs text-red-600 mt-0.5">⚠ {e}</p>
+                    ))}
 
-                        {/* Sensationalism score */}
-                        <td className="px-3 py-2 border border-gray-200 text-center align-top">
-                          <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-bold ${
-                            h.sensationalism_score >= 7 ? "bg-orange-100 text-orange-800"
-                            : h.sensationalism_score >= 5 ? "bg-yellow-100 text-yellow-800"
-                            : "bg-gray-100 text-gray-600"
-                          }`}>
-                            {h.sensationalism_score}/10
-                          </span>
-                        </td>
+                    {/* Reject reason input */}
+                    {rejectingId === h.id && (
+                      <div className="mt-2 flex gap-2 items-start">
+                        <input
+                          type="text"
+                          value={rejectReason}
+                          onChange={(e) => setRejectReason(e.target.value)}
+                          placeholder="Rejection reason (optional)"
+                          className="flex-1 border border-gray-300 rounded px-2 py-1 text-xs"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => rejectHeadline(h.id)}
+                          disabled={actionState[h.id] === "loading"}
+                          className="text-xs bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 disabled:opacity-50"
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setRejectingId(null); setRejectReason(""); }}
+                          className="text-xs text-gray-500 px-1 py-1"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
 
-                        {/* Risk level */}
-                        <td className="px-3 py-2 border border-gray-200 text-center align-top">
-                          <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-full border ${RISK_STYLES[h.risk_level as RiskLevel]}`}>
-                            {h.risk_level}
-                          </span>
-                        </td>
+                    {/* Action buttons */}
+                    <div className="mt-3 flex flex-wrap gap-2 items-center border-t border-gray-100 pt-3">
+                      {h.approval_status === "PENDING" && !isBlocked && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => approveHeadline(h.id)}
+                            disabled={actionState[h.id] === "loading"}
+                            className="text-xs bg-blue-600 text-white font-bold px-3 py-1.5 rounded hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {actionState[h.id] === "loading" ? "…" : "Approve"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRejectingId(h.id)}
+                            disabled={actionState[h.id] === "loading"}
+                            className="text-xs bg-white text-red-600 border border-red-300 px-3 py-1.5 rounded hover:bg-red-50 disabled:opacity-50"
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
 
-                        {/* Approval status */}
-                        <td className="px-3 py-2 border border-gray-200 text-center align-top">
-                          <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-full ${APPROVAL_STYLES[h.approval_status as HeadlineStatus]}`}>
-                            {h.approval_status}
-                          </span>
-                          {h.approved_at && (
-                            <p className="text-xs text-gray-400 mt-0.5">
-                              {new Date(h.approved_at).toLocaleDateString()}
-                            </p>
-                          )}
-                        </td>
+                      {h.approval_status === "APPROVED" && !isBlocked && !isSelected && (
+                        isPendingConfirm ? (
+                          <button
+                            type="button"
+                            onClick={() => selectHeadline(h.id, "confirm")}
+                            disabled={actionState[h.id] === "loading"}
+                            className="text-xs bg-yellow-500 text-white font-bold px-3 py-1.5 rounded hover:bg-yellow-600 disabled:opacity-50"
+                          >
+                            Confirm select
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => selectHeadline(h.id)}
+                            disabled={actionState[h.id] === "loading"}
+                            className="text-xs bg-green-600 text-white font-bold px-3 py-1.5 rounded hover:bg-green-700 disabled:opacity-50"
+                          >
+                            {actionState[h.id] === "loading" ? "…" : "Select"}
+                          </button>
+                        )
+                      )}
 
-                        {/* Notes */}
-                        <td className="px-3 py-2 border border-gray-200 align-top">
-                          <p className="text-xs text-gray-500 leading-relaxed">{h.reason_for_score}</p>
-                          {h.source_fields_used.length > 0 && (
-                            <p className="text-xs text-gray-400 mt-1">Fields: {h.source_fields_used.join(", ")}</p>
-                          )}
-                        </td>
+                      {h.risk_level === "MEDIUM" && (
+                        <button
+                          type="button"
+                          onClick={() => generate(true)}
+                          disabled={generating}
+                          className="text-xs bg-gray-100 text-gray-700 border border-gray-300 px-3 py-1.5 rounded hover:bg-gray-200 disabled:opacity-50"
+                        >
+                          Safer rewrite
+                        </button>
+                      )}
 
-                        {/* Actions */}
-                        <td className="px-3 py-2 border border-gray-200 align-top">
-                          <div className="flex flex-col gap-1.5 items-start min-w-[110px]">
-                            {/* Approve */}
-                            {h.approval_status === "PENDING" && !isBlocked && (
-                              <button
-                                type="button"
-                                onClick={() => approveHeadline(h.id)}
-                                disabled={actionState[h.id] === "loading"}
-                                className="text-xs bg-blue-600 text-white font-bold px-2 py-1 rounded hover:bg-blue-700 disabled:opacity-50 w-full text-center"
-                              >
-                                {actionState[h.id] === "loading" ? "…" : "Approve"}
-                              </button>
-                            )}
+                      {!isBlocked && !isSelected && h.approval_status !== "REJECTED" && (
+                        <button
+                          type="button"
+                          onClick={() => blockHeadline(h.id)}
+                          className="text-xs text-gray-400 hover:text-red-500 px-2 py-1"
+                        >
+                          Block
+                        </button>
+                      )}
 
-                            {/* Reject */}
-                            {h.approval_status === "PENDING" && !isBlocked && (
-                              <button
-                                type="button"
-                                onClick={() => setRejectingId(h.id)}
-                                disabled={actionState[h.id] === "loading"}
-                                className="text-xs bg-white text-red-600 border border-red-300 px-2 py-1 rounded hover:bg-red-50 disabled:opacity-50 w-full text-center"
-                              >
-                                Reject
-                              </button>
-                            )}
-
-                            {/* Select / confirm (APPROVED only) */}
-                            {h.approval_status === "APPROVED" && !isBlocked && !isSelected && (
-                              <>
-                                {isPendingConfirm ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => selectHeadline(h.id, "confirm")}
-                                    disabled={actionState[h.id] === "loading"}
-                                    className="text-xs bg-yellow-500 text-white font-bold px-2 py-1 rounded hover:bg-yellow-600 disabled:opacity-50 w-full text-center"
-                                  >
-                                    Confirm select
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => selectHeadline(h.id)}
-                                    disabled={actionState[h.id] === "loading"}
-                                    className="text-xs bg-green-600 text-white font-bold px-2 py-1 rounded hover:bg-green-700 disabled:opacity-50 w-full text-center"
-                                  >
-                                    {actionState[h.id] === "loading" ? "…" : "Select"}
-                                  </button>
-                                )}
-                              </>
-                            )}
-
-                            {/* Safer rewrite */}
-                            {h.risk_level === "MEDIUM" && (
-                              <button
-                                type="button"
-                                onClick={() => generate(true)}
-                                disabled={generating}
-                                className="text-xs bg-gray-100 text-gray-700 border border-gray-300 px-2 py-1 rounded hover:bg-gray-200 disabled:opacity-50 w-full text-center"
-                              >
-                                Safer rewrite
-                              </button>
-                            )}
-
-                            {/* Block */}
-                            {!isBlocked && !isSelected && h.approval_status !== "REJECTED" && (
-                              <button
-                                type="button"
-                                onClick={() => blockHeadline(h.id)}
-                                className="text-xs text-gray-400 hover:text-red-500 px-2 py-1 w-full text-center"
-                              >
-                                Block
-                              </button>
-                            )}
-
-                            {isSelected && <span className="text-xs text-blue-600 font-semibold">Active</span>}
-                            {h.risk_level === "HIGH" && <span className="text-xs text-red-600 font-semibold">Blocked (high risk)</span>}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                      {isSelected && (
+                        <span className="text-xs text-blue-600 font-semibold ml-auto">Active headline</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         );

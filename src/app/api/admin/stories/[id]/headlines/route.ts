@@ -45,6 +45,11 @@ export async function POST(
 
   const body = await req.json().catch(() => ({}));
   const safeOnly: boolean = body.safeOnly === true;
+  // tone can be overridden per-request from the panel UI; falls back to story setting
+  const toneOverride: EditorialTone | undefined =
+    ["NEUTRAL", "CATCHY", "SENSATIONAL_CAUTIOUS"].includes(body.tone)
+      ? (body.tone as EditorialTone)
+      : undefined;
 
   // Next batch number
   const lastBatch = await prisma.storyHeadline.aggregate({
@@ -74,7 +79,7 @@ export async function POST(
     // bond and release_status not on Story model — enriched from ParsedRecord when available
   };
 
-  const tone = (story.editorial_tone_setting ?? "SENSATIONAL_CAUTIOUS") as EditorialTone;
+  const tone = toneOverride ?? ((story.editorial_tone_setting ?? "SENSATIONAL_CAUTIOUS") as EditorialTone);
   const generated = generateHeadlines(storyData, nextBatch, safeOnly, tone);
 
   // Uniqueness pass: check if any headline_text already exists on a *different* story
