@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { StoryFormData, StoryStatus } from "@/lib/types";
+import HeadlinePanel from "@/components/HeadlinePanel";
 
 interface Props {
   initialData?: Partial<StoryFormData> & { id?: string; status?: StoryStatus };
@@ -18,6 +19,7 @@ const DEFAULT: StoryFormData = {
   source_confidence_score: 0.9,
   body: "",
   source_name: "",
+  subject_descriptor: "resident",
   source_url: "",
   incident_date: "",
   arrest_date: "",
@@ -214,6 +216,23 @@ export default function StoryForm({ initialData, mode }: Props) {
               placeholder="Fort Lauderdale"
             />
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Subject Descriptor{" "}
+              <span className="text-gray-400 text-xs">used in generated headlines</span>
+            </label>
+            <select
+              value={data.subject_descriptor ?? "resident"}
+              onChange={(e) => set("subject_descriptor", e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white"
+            >
+              <option value="resident">resident</option>
+              <option value="man">man</option>
+              <option value="woman">woman</option>
+              <option value="suspect">suspect</option>
+              <option value="person">person</option>
+            </select>
+          </div>
         </div>
 
         {/* Charges */}
@@ -345,6 +364,19 @@ export default function StoryForm({ initialData, mode }: Props) {
           />
         </div>
       </section>
+
+      {/* Headline Options Panel — only visible after story is saved (edit mode) */}
+      {mode === "edit" && initialData?.id ? (
+        <HeadlinePanel storyId={initialData.id} />
+      ) : (
+        <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg p-5 text-sm text-gray-500 text-center">
+          <p className="font-medium">Headline Generator</p>
+          <p className="mt-1">
+            Save this story as a draft first, then return to this page to generate
+            and compare headline options.
+          </p>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex flex-wrap gap-3 pb-10">

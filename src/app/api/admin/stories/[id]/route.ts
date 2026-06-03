@@ -31,6 +31,7 @@ export async function PATCH(
     incident_date: body.incident_date ? new Date(body.incident_date) : null,
     arrest_date: body.arrest_date ? new Date(body.arrest_date) : null,
     subject_name: body.subject_name || null,
+    subject_descriptor: body.subject_descriptor || existing.subject_descriptor || "resident",
     charges: body.charges ?? existing.charges,
     booking_number: body.booking_number || null,
     municipality: body.municipality || null,

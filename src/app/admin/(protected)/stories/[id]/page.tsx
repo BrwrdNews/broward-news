@@ -30,6 +30,7 @@ export default async function EditStoryPage({
       ? story.arrest_date.toISOString().split("T")[0]
       : "",
     subject_name: story.subject_name ?? "",
+    subject_descriptor: story.subject_descriptor ?? "resident",
     charges: story.charges,
     booking_number: story.booking_number ?? "",
     municipality: story.municipality ?? "",

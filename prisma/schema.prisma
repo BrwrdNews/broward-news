@@ -7,44 +7,90 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ---------------------------------------------------------------------------
+// Story
+// ---------------------------------------------------------------------------
+
 model Story {
-  id                    String        @id @default(cuid())
-  slug                  String        @unique
+  id                    String             @id @default(cuid())
+  slug                  String             @unique
   headline_standard     String
   headline_catchy       String
-  headline_chosen       String?       // admin picks or edits final headline
-  editorial_tone        String        @default("Catchy tabloid-style, fact-bound, legally cautious.")
-  geography_focus       String        @default("Fort Lauderdale / Broward County, Florida")
-  source_confidence_score Float       @default(0.0) // 0.0 – 1.0
-  body                  String        @db.Text
-  status                StoryStatus   @default(DRAFT)
-  source_name           String        // e.g. "Broward County Sheriff's Office"
+  headline_chosen       String?
+  editorial_tone        String             @default("Catchy tabloid-style, fact-bound, legally cautious.")
+  geography_focus       String             @default("Fort Lauderdale / Broward County, Florida")
+  source_confidence_score Float            @default(0.0)
+  body                  String             @db.Text
+  status                StoryStatus        @default(DRAFT)
+  source_name           String
   source_url            String?
   incident_date         DateTime?
   arrest_date           DateTime?
-  subject_name          String?       // full name from arrest record
-  charges               String[]      // list of charge strings
+  subject_name          String?
+  /// "man" | "woman" | "resident" | "suspect" — used as descriptor in generated headlines
+  subject_descriptor    String             @default("resident")
+  charges               String[]
   booking_number        String?
-  municipality          String?       // Fort Lauderdale, Pompano Beach, etc.
-  created_at            DateTime      @default(now())
-  updated_at            DateTime      @updatedAt
+  municipality          String?
+  /// Detected from charge text; controls neutral-only headline mode
+  sensitive_category    SensitiveCategory?
+  created_at            DateTime           @default(now())
+  updated_at            DateTime           @updatedAt
   published_at          DateTime?
-  reviewed_by           String?       // admin user id
+  reviewed_by           String?
   reviewed_at           DateTime?
-  admin_notes           String?       @db.Text
+  admin_notes           String?            @db.Text
+
+  headlines             StoryHeadline[]
 
   @@index([status])
   @@index([created_at])
   @@index([municipality])
 }
 
-model AdminUser {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  password     String   // bcrypt hash
-  name         String
-  created_at   DateTime @default(now())
+// ---------------------------------------------------------------------------
+// StoryHeadline — one row per generated headline option
+// ---------------------------------------------------------------------------
+
+model StoryHeadline {
+  id                    String       @id @default(cuid())
+  story_id              String
+  story                 Story        @relation(fields: [story_id], references: [id], onDelete: Cascade)
+
+  headline_text         String
+  headline_type         HeadlineType
+  factual_safety_score  Int          /// 1–10
+  catchiness_score      Int          /// 1–10
+  risk_level            RiskLevel
+  reason_for_score      String       @db.Text
+  source_fields_used    String[]
+
+  is_selected           Boolean      @default(false)
+  is_blocked            Boolean      @default(false)
+  generation_batch      Int          @default(1)
+
+  created_at            DateTime     @default(now())
+
+  @@index([story_id])
+  @@index([is_selected])
+  @@index([story_id, generation_batch])
 }
+
+// ---------------------------------------------------------------------------
+// Admin users
+// ---------------------------------------------------------------------------
+
+model AdminUser {
+  id         String   @id @default(cuid())
+  email      String   @unique
+  password   String
+  name       String
+  created_at DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
 
 enum StoryStatus {
   DRAFT
@@ -52,4 +98,32 @@ enum StoryStatus {
   APPROVED
   PUBLISHED
   REJECTED
+}
+
+enum HeadlineType {
+  STANDARD
+  CATCHY
+  ALLITERATIVE
+  RHYME
+  IDIOM
+  SHORT_MOBILE
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+/// When set, only neutral headline types are generated and only LOW-risk
+/// headlines are selectable without additional confirmation.
+enum SensitiveCategory {
+  SEX_CRIME
+  DOMESTIC_VIOLENCE
+  MINOR_INVOLVED
+  DEATH
+  SERIOUS_INJURY
+  HUMAN_TRAFFICKING
+  HATE_CRIME
+  MENTAL_HEALTH
 }
